@@ -1,0 +1,18 @@
+{
+  "name": "caredrive-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local WebSocket relay between the phone (or phone simulator) and the CareDrive Pleos car app",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

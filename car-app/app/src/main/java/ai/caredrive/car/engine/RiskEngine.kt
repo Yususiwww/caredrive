@@ -48,6 +48,12 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
 
     fun readiness() = readiness
 
+    fun restingHr() = restingHr
+
+    /** Heart rate at or above this for 5 minutes is a caution. */
+    fun hrLimit() = restingHr + (if (readiness.factors.any { it.kind == FactorKind.RECENT_IHRN }) 20 else 30) +
+        (if (recentExercise) 10 else 0)
+
     /** Driver said "괜찮아": quiet this reason for a while and go back to normal. */
     fun dismiss(now: Long) {
         snoozedReason = last.reason
@@ -81,8 +87,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         }
 
         val hr = live.heartRate
-        val hrLimit = restingHr + (if (readiness.factors.any { it.kind == FactorKind.RECENT_IHRN }) 20 else 30) +
-            (if (recentExercise) 10 else 0)
+        val hrLimit = hrLimit()
         hrHighSince = if (hr != null && hr >= hrLimit) hrHighSince ?: now else null
         val hrHighMin = hrHighSince?.let { (now - it) / MIN } ?: 0
 

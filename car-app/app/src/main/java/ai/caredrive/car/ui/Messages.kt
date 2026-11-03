@@ -44,10 +44,11 @@ object Messages {
         }
     }
 
-    private fun normal(s: CareState) = Message(
-        "편안한 운전 중이에요",
-        breakLine(s) ?: "이상이 있으면 음성으로 알려 드릴게요",
-    )
+    private fun normal(s: CareState) = if (s.parked) {
+        Message("잠시 멈춰 있어요", "10분 이상 쉬면 휴식 시간이 다시 계산돼요")
+    } else {
+        Message("편안한 운전 중이에요", breakLine(s) ?: "이상이 있으면 음성으로 알려 드릴게요")
+    }
 
     private fun caution(s: CareState) = when (s.reason) {
         Reason.BREAK_DUE -> Message(

@@ -106,6 +106,13 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
                 Spacer(Modifier.width(14.dp))
                 Text("bpm", color = TextSub, fontSize = 36.sp, modifier = Modifier.padding(bottom = 24.dp))
             }
+            if (!state.parked && state.hrHistory.size >= 2) {
+                HeartRateChart(
+                    state.hrHistory, state.nowMs, CareState.HR_WINDOW_MS, state.restingHr, state.hrLimit,
+                    lineColor = color, modifier = Modifier.fillMaxWidth().height(110.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
             state.glucose?.let {
                 Text("혈당 $it mg/dL", color = if (it < 70) Color(0xFFFB923C) else TextSub, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             }
@@ -131,7 +138,7 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
                 Spacer(Modifier.height(10.dp))
             }
             Text(
-                (if (state.connected) "워치 연결됨" else "워치 연결 안 됨") + (if (state.parked) " · 정차" else " · 주행 중"),
+                (if (state.connected) "폰 연결됨" else "폰 연결 안 됨") + (if (state.parked) " · 정차" else " · 주행 중"),
                 color = if (state.connected) Color(0xFF5EEAD4) else TextSub, fontSize = 26.sp,
             )
             state.lastEvent?.let {
@@ -147,7 +154,18 @@ private fun MainCard(state: CareState, actions: CareActions) {
     val msg = Messages.forState(state)
     val color = levelColor(state.level)
     when (state.level) {
-        Level.L0_NORMAL -> PlainView(msg, if (state.parked && state.drivingMin == 0) state.readiness?.grade?.let(::gradeColor) else null)
+        Level.L0_NORMAL -> PlainView(msg, if (state.parked && state.drivingMin == 0) state.readiness?.grade?.let(::gradeColor) else null) {
+            if (state.parked && state.hrHistory.size >= 2) {
+                Spacer(Modifier.height(48.dp))
+                Text("심박 추이", color = TextMain, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(16.dp))
+                HeartRateChart(
+                    state.hrHistory, state.nowMs, CareState.HR_WINDOW_MS, state.restingHr, state.hrLimit,
+                    lineColor = Color(0xFF14B8A6), showLabels = true,
+                    modifier = Modifier.fillMaxWidth().height(320.dp).clip(RoundedCornerShape(24.dp)).background(Panel).padding(28.dp),
+                )
+            }
+        }
         Level.L1_CAUTION -> MessageCard(color, msg) {}
         Level.L2_WARNING -> if (state.guidingToRest) {
             MessageCard(color, Message("휴게소로 안내 중이에요", "도착하면 잠시 쉬어 가세요.", state.lastEvent)) {}
@@ -170,7 +188,7 @@ private fun MainCard(state: CareState, actions: CareActions) {
 }
 
 @Composable
-private fun PlainView(msg: Message, accent: Color?) {
+private fun PlainView(msg: Message, accent: Color?, extra: @Composable () -> Unit = {}) {
     Column(Modifier.fillMaxSize().padding(start = 24.dp), verticalArrangement = Arrangement.Center) {
         if (accent != null) {
             Box(Modifier.width(120.dp).height(12.dp).clip(RoundedCornerShape(6.dp)).background(accent))
@@ -183,6 +201,7 @@ private fun PlainView(msg: Message, accent: Color?) {
             Spacer(Modifier.height(20.dp))
             Text(it, color = TextSub, fontSize = 30.sp, style = Phrase)
         }
+        extra()
     }
 }
 

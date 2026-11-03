@@ -18,6 +18,9 @@ enum class Reason {
     BREAK_OVERDUE,
 }
 
+/** One heart-rate reading at simulated time [atMs]. */
+data class HrSample(val atMs: Long, val bpm: Int)
+
 data class CareState(
     val level: Level = Level.L0_NORMAL,
     val reason: Reason = Reason.NONE,
@@ -33,4 +36,11 @@ data class CareState(
     val guidingToRest: Boolean = false,
     /** Last thing the car did (voice, HVAC, navigation), shown small on screen. */
     val lastEvent: String? = null,
-)
+    /** Recent heart-rate readings for the trend chart (last [HR_WINDOW_MS]). */
+    val hrHistory: List<HrSample> = emptyList(),
+    val nowMs: Long = 0L,
+    val restingHr: Int? = null,
+    val hrLimit: Int? = null,
+) {
+    companion object { const val HR_WINDOW_MS = 30 * 60_000L }
+}

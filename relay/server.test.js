@@ -1,0 +1,44 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { WebSocket } from 'ws';
+import { createRelay } from './server.js';
+
+const open = (url) => new Promise((resolve, reject) => {
+  const ws = new WebSocket(url);
+  const inbox = [];
+  ws.on('message', (d) => inbox.push(JSON.parse(d.toString())));
+  ws.once('open', () => resolve({ ws, inbox }));
+  ws.once('error', reject);
+});
+const until = async (fn, ms = 1000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { const v = fn(); if (v) return v; await new Promise((r) => setTimeout(r, 10)); }
+  throw new Error('timeout');
+};
+
+test('forwards phone data to car and status back, drops unknown types', async () => {
+  const relay = await createRelay({ port: 0, log: () => {} });
+  const base = `ws://127.0.0.1:${relay.port}`;
+  try {
+    const phone = await open(`${base}/phone`);
+    phone.ws.send(JSON.stringify({ type: 'live', hr: 101 }));
+    const car = await open(`${base}/car`);
+
+    // Car gets the latest live value replayed on connect, and both see each other.
+    await until(() => car.inbox.find((m) => m.type === 'live' && m.hr === 101));
+    await until(() => phone.inbox.find((m) => m.type === 'peers' && m.car));
+
+    phone.ws.send(JSON.stringify({ type: 'ihrn' }));
+    phone.ws.send(JSON.stringify({ type: 'status', level: 'L3' })); // phone may not send status
+    await until(() => car.inbox.find((m) => m.type === 'ihrn'));
+    assert.equal(car.inbox.some((m) => m.type === 'status'), false);
+
+    car.ws.send(JSON.stringify({ type: 'status', level: 'L2_WARNING' }));
+    await until(() => phone.inbox.find((m) => m.type === 'status' && m.level === 'L2_WARNING'));
+
+    phone.ws.close();
+    car.ws.close();
+  } finally {
+    relay.close();
+  }
+});

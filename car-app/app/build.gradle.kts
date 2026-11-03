@@ -16,6 +16,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        // Relay server on the Mac, as seen from the Pleos emulator. See relay/server.js.
+        buildConfigField("String", "RELAY_URL", "\"ws://10.0.2.2:8787/car\"")
     }
 
     buildTypes {

@@ -8,7 +8,9 @@ import ai.caredrive.car.engine.LiveSignals
 import ai.caredrive.car.engine.RiskEngine
 import ai.caredrive.car.engine.RiskEngine.Companion.MIN
 import ai.caredrive.car.model.CareState
+import ai.caredrive.car.model.HrSample
 import ai.caredrive.car.model.Level
+import ai.caredrive.car.relay.RelayClient
 import ai.caredrive.car.ui.CareActions
 import ai.caredrive.car.ui.CareScreen
 import ai.caredrive.car.ui.DemoBar
@@ -27,11 +29,22 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 class MainActivity : ComponentActivity() {
-    private var state by mutableStateOf(CareState(connected = true))
+    private var state by mutableStateOf(CareState())
     private var demoStatus by mutableStateOf<String?>(null)
     private lateinit var car: CarServices
+    private lateinit var relay: RelayClient
+    private var lastSentStatus: String? = null
+    private val json = Json { ignoreUnknownKeys = true }
     private val engine = RiskEngine()
     private val main = Handler(Looper.getMainLooper())
 
@@ -92,6 +105,12 @@ class MainActivity : ComponentActivity() {
             onGear = { gear -> runOnUiThread { onGearChanged(gear) } },
         )
         car.start()
+        relay = RelayClient(
+            BuildConfig.RELAY_URL,
+            onMessage = ::onRelayMessage,
+            onConnection = { up -> if (!up) state = state.copy(connected = false); lastSentStatus = null },
+        )
+        relay.start()
         if (BuildConfig.DEBUG) {
             registerReceiver(demoReceiver, IntentFilter(DEMO_ACTION), RECEIVER_EXPORTED)
             applyPreset("predrive")
@@ -106,6 +125,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         main.removeCallbacks(tick)
+        relay.stop()
         if (BuildConfig.DEBUG) unregisterReceiver(demoReceiver)
         car.stop()
         super.onDestroy()
@@ -116,6 +136,7 @@ class MainActivity : ComponentActivity() {
         val decision = engine.update(simNow, LiveSignals(inputs.heartRate, inputs.glucose, pendingIhrn), driving)
         pendingIhrn = false
         val prev = state
+        val history = recordHr(prev.hrHistory, inputs.heartRate)
         val next = prev.copy(
             level = decision.level,
             reason = decision.reason,
@@ -126,9 +147,67 @@ class MainActivity : ComponentActivity() {
             nextBreakInMin = decision.nextBreakInMin,
             parked = !driving,
             guidingToRest = prev.guidingToRest && decision.level == Level.L2_WARNING,
+            hrHistory = history,
+            nowMs = simNow,
+            restingHr = engine.restingHr(),
+            hrLimit = engine.hrLimit(),
         )
         state = next
         if (next.level != prev.level || next.reason != prev.reason) respond(next)
+        sendStatus(next)
+    }
+
+    /** Keep one sample per 5 simulated seconds for the last 30 minutes. */
+    private fun recordHr(history: List<HrSample>, bpm: Int?): List<HrSample> {
+        if (bpm == null) return history
+        val last = history.lastOrNull()
+        val added = if (last == null || simNow - last.atMs >= 5_000) history + HrSample(simNow, bpm) else history
+        val from = simNow - CareState.HR_WINDOW_MS
+        return if (added.first().atMs < from) added.dropWhile { it.atMs < from } else added
+    }
+
+    /** Mirror the car state to the phone (only when something the phone shows changed). */
+    private fun sendStatus(s: CareState) {
+        val msg = buildJsonObject {
+            put("type", "status")
+            put("level", s.level.name)
+            put("reason", s.reason.name)
+            put("parked", s.parked)
+            put("drivingMin", s.drivingMin)
+            put("nextBreakInMin", s.nextBreakInMin ?: 0)
+            put("grade", s.readiness?.grade?.name)
+            put("lastEvent", s.lastEvent)
+        }.toString()
+        if (msg != lastSentStatus && relay.send(msg)) lastSentStatus = msg
+    }
+
+    /** Phone (or phone simulator) → car. Protocol: docs/protocol.md. */
+    private fun onRelayMessage(m: JsonObject) {
+        val type = m["type"]?.jsonPrimitive?.content ?: return
+        if (type == "peers") {
+            state = state.copy(connected = m["phone"]?.jsonPrimitive?.booleanOrNull == true)
+            lastSentStatus = null // a (re)connected phone needs the current status
+            sendStatus(state)
+            return
+        }
+        // The scripted scenario owns the inputs until the phone does something else.
+        if (type == "live" && scenarioIndex >= 0) return
+        if (type != "live") stopScenario()
+        when (type) {
+            "condition" -> m["condition"]?.let {
+                setCondition(json.decodeFromJsonElement(DriverCondition.serializer(), it))
+                if (state.parked) { evaluate(); Messages.forState(state).speak?.let(car::speak) }
+            }
+            "live" -> inputs = inputs.copy(
+                heartRate = m["hr"]?.jsonPrimitive?.intOrNull,
+                glucose = m["glucose"]?.takeIf { it != JsonNull }?.jsonPrimitive?.intOrNull,
+            )
+            "ihrn" -> pendingIhrn = true
+            "drive" -> inputs = inputs.copy(drivingOverride = m["driving"]?.jsonPrimitive?.booleanOrNull)
+            "advance" -> advance(m["minutes"]?.jsonPrimitive?.intOrNull ?: 0)
+            "scenario" -> startScenario()
+        }
+        evaluate()
     }
 
     /** What the car does when the level or reason changes. */
@@ -155,9 +234,7 @@ class MainActivity : ComponentActivity() {
 
     private fun applyPreset(id: String) {
         log("preset: $id")
-        scenarioIndex = -1
-        speed = 1
-        demoStatus = null
+        stopScenario()
         val low = DriverCondition(sleepMinutes = 280, energyScore = 45, restingHr = 68)
         when (id) {
             "predrive" -> {
@@ -179,6 +256,12 @@ class MainActivity : ComponentActivity() {
             "park" -> inputs = inputs.copy(drivingOverride = false)
             "scenario" -> startScenario()
         }
+    }
+
+    private fun stopScenario() {
+        scenarioIndex = -1
+        speed = 1
+        demoStatus = null
     }
 
     private fun startScenario() {

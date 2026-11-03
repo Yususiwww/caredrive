@@ -42,6 +42,19 @@ cd relay && npm install && npm start
 
 **심박 추이 차트**: 실제 심박 숫자(5초 간격, 최근 30분)를 선으로 그린다. 파형이 아니고 애니메이션도 없다(Pleos 운전 중 디자인 원칙). 주행 중에는 상태 패널에 작게, 정차 중에는 크게 보이며 안정 심박(회색 점선)과 주의 기준(노란 점선)을 함께 표시한다.
 
+## 시연 영상 만들기
+
+중계 서버와 에뮬레이터(차 앱)가 켜진 상태에서:
+
+```bash
+cd relay
+node demo/record.mjs /tmp/caredrive-demo     # 폰 페이지(헤드리스 Chrome) + 차 화면(adb screenrecord) 녹화, 약 80초
+python3 demo/compose.py /tmp/caredrive-demo  # 나란히 합치고 장면 제목·차 음성 자막 → caredrive-demo.mp4
+```
+
+- 녹화 전 브라우저에 열린 폰 시뮬레이터 탭은 닫는다(중계 서버는 폰 1대만 연결).
+- 영상에 소리는 없고, 차가 말한 문장은 자막으로 들어간다.
+
 ## 데모 모드 (디버그 빌드)
 
 화면 아래 버튼 또는 adb로 상황을 넣는다.

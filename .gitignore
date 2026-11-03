@@ -6,3 +6,4 @@ local.properties
 .kotlin/
 .DS_Store
 node_modules/
+docs/demo/*.mp4

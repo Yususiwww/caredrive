@@ -114,9 +114,13 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
                 Spacer(Modifier.height(16.dp))
             }
             Text(
-                if (state.connected) "워치 연결됨" else "워치 연결 안 됨",
+                (if (state.connected) "워치 연결됨" else "워치 연결 안 됨") + (if (state.parked) " · 정차(P)" else " · 주행 중"),
                 color = if (state.connected) Color(0xFF5EEAD4) else TextSub, fontSize = 28.sp,
             )
+            state.lastEvent?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(it, color = TextSub, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, style = Phrase)
+            }
         }
     }
 }
@@ -149,6 +153,15 @@ private fun WarningView(state: CareState, actions: CareActions) {
         Reason.IHRN_NEW -> "심장 리듬 알림이 왔어요"
         Reason.HR_LOW -> "심박이 평소보다 많이 낮아요"
         else -> "심박이 계속 높아요"
+    }
+    if (state.guidingToRest) {
+        MessageCard(
+            color = levelColor(Level.L2_WARNING),
+            title = "휴게소로 안내 중이에요",
+            body = "도착하면 잠시 쉬어 가세요.",
+            note = state.lastEvent,
+        ) {}
+        return
     }
     MessageCard(
         color = levelColor(Level.L2_WARNING),

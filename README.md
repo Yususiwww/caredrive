@@ -8,7 +8,7 @@
 
 | 폴더 | 내용 | 상태 |
 |---|---|---|
-| `car-app/` | Pleos 차량 앱 (AAOS · Kotlin · Compose) | 1단계: 단계별 화면 |
+| `car-app/` | Pleos 차량 앱 (AAOS · Kotlin · Compose) | 2단계: 음성·공조·휴게소·기어 연결 |
 | `relay/` | 폰 ↔ 차 중계 서버 (Node.js · WebSocket) | 4단계 예정 |
 | `phone-sim/` | 폰 시뮬레이터 웹페이지 (가짜 심박·부정맥 알림) | 4단계 예정 |
 | `docs/decisions/` | 결정 기록 | |
@@ -32,6 +32,19 @@ adb shell am start -n ai.caredrive.car/.MainActivity
 ```
 
 JDK 17 필요 (Android Studio 내장 JBR 사용 가능). 디버그 빌드 하단의 DEMO 버튼으로 단계 화면을 바꿔 볼 수 있습니다.
+
+## 차량 기능 (2단계)
+
+| 기능 | Pleos API | 에뮬레이터 확인 |
+|---|---|---|
+| 음성 안내 | TextToSpeech `ON_DEVICE`, ko-KR | 확인 |
+| 공조 시원하게 | Vehicle HVAC: 전원 켜기 → 운전석 온도 −2℃, 풍량 +2 | 확인 (22→20℃, 3→5단) |
+| 휴게소 안내 | NaviHelper: 현재 위치 → 가장 가까운 휴게소·졸음쉼터 → 목적지 또는 경유지 | 확인 (판교 → 성남졸음쉼터 3.6km) |
+| 주행/정차 | Vehicle Gear 콜백 (경고 중 P → 정차 후 조치) | 확인 |
+
+- NaviHelper 3.0.5에는 장소 검색이 없어서, OpenStreetMap의 휴게소·졸음쉼터 1,216곳(`assets/rest_areas.json`, © OpenStreetMap contributors, ODbL)에서 진행 방향 ±70° 안의 가장 가까운 곳을 고른다.
+- 에뮬레이터 주의: 공조 값은 Virtual Console(`adb forward tcp:8088 tcp:8088` → http://127.0.0.1:8088)에서 한 번 값을 바꿔 "publish"해야 앱에서 읽힌다. 그 전에는 `PropertyNotAvailableException`.
+- 공조 영역은 차마다 다르다(전원·풍량은 1열 전체, 온도는 좌석별). 항상 capability로 받은 영역을 쓴다.
 
 ## 사용 SDK
 

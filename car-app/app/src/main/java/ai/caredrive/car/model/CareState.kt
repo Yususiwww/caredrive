@@ -12,4 +12,10 @@ data class CareState(
     /** A recent IHRN (irregular heart rhythm notification) was found before departure. */
     val cautionMode: Boolean = false,
     val connected: Boolean = false,
+    /** True when the car is in P. Comes from the Pleos Gear API. */
+    val parked: Boolean = true,
+    /** Driver accepted the rest-stop suggestion and navigation is set. */
+    val guidingToRest: Boolean = false,
+    /** Last thing the car did (voice, HVAC, navigation), shown small on screen. */
+    val lastEvent: String? = null,
 )

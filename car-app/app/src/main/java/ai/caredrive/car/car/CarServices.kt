@@ -89,6 +89,7 @@ class CarServices(
             override fun onSuccess() {
                 tts.setLocale(Locale.KOREA)
                 ttsReady = true
+                pendingSpeech?.let { main.post { pendingSpeech = null; lastSpoken = null; speak(it) } }
             }
             override fun onFailure(errorType: ErrorType) { onEvent("음성 초기화 실패: $errorType") }
         })
@@ -102,12 +103,20 @@ class CarServices(
         tts.release()
     }
 
+    private var pendingSpeech: String? = null
+    private var lastSpoken: Pair<String, Long>? = null
+
+    /** Speak [text]; the same sentence within 3 s is ignored, and speech before TTS is ready is queued. */
     fun speak(text: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        lastSpoken?.let { (t, at) -> if (t == text && now - at < 3_000) return }
+        lastSpoken = text to now
         Log.i(TAG, "speak: $text")
-        if (!ttsReady) { onEvent("음성 준비 전: \"$text\""); return }
+        if (!ttsReady) { pendingSpeech = text; return }
         tts.stop()
         tts.speak(text, true)
     }
+
 
     /** Make the cabin a little cooler: driver temperature −2℃ and fan +2, within the car's limits. */
     fun coolCabin() {
@@ -131,7 +140,9 @@ class CarServices(
             val area = driverArea(bounds.keys) ?: return@checkHvacTemperatureCapabilities onEvent("온도 조절 미지원")
             val min = bounds[area]?.minValue ?: 16f
             hvac.getHvacTemperature(area, TemperatureUnit.CELSIUS, { current ->
-                val target = ((current ?: 22f) - 2f).coerceAtLeast(min)
+                // Cool by 2℃ but never below a comfortable 20℃ (repeated cautions must not freeze the cabin).
+                val target = ((current ?: 22f) - 2f).coerceAtLeast(maxOf(min, COMFORT_FLOOR_C))
+                if (current != null && current <= target) { onEvent("운전석 온도 ${current}℃ 유지"); return@getHvacTemperature }
                 hvac.setHvacTemperature(area, target, TemperatureUnit.CELSIUS,
                     { _, v -> onEvent("운전석 온도 ${v}℃로 낮춤") },
                     { report("온도 설정 실패", it) })
@@ -211,5 +222,8 @@ class CarServices(
         onEvent("$msg: ${e.javaClass.simpleName}")
     }
 
-    companion object { private const val TAG = "CareDrive" }
+    companion object {
+        private const val TAG = "CareDrive"
+        private const val COMFORT_FLOOR_C = 20f
+    }
 }

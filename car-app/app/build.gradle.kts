@@ -48,4 +48,5 @@ dependencies {
     implementation(libs.pleos.tts)
 
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(libs.junit)
 }

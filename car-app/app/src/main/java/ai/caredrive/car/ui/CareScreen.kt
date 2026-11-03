@@ -104,7 +104,10 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(state.heartRate?.toString() ?: "--", color = TextMain, fontSize = 120.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(14.dp))
-                Text("bpm", color = TextSub, fontSize = 36.sp, modifier = Modifier.padding(bottom = 24.dp))
+                Column(Modifier.padding(bottom = 24.dp)) {
+                    HeartbeatIcon(Color(0xFFF43F5E), Modifier.width(96.dp).height(52.dp))
+                    Text("bpm", color = TextSub, fontSize = 36.sp)
+                }
             }
             if (!state.parked && state.hrHistory.size >= 2) {
                 HeartRateChart(
@@ -168,9 +171,9 @@ private fun MainCard(state: CareState, actions: CareActions) {
         }
         Level.L1_CAUTION -> MessageCard(color, msg) {}
         Level.L2_WARNING -> if (state.guidingToRest) {
-            MessageCard(color, Message("휴게소로 안내 중이에요", "도착하면 잠시 쉬어 가세요.", state.lastEvent)) {}
+            MessageCard(color, Message("휴게소로 안내 중이에요", "도착하면 잠시 쉬어 가세요.", state.lastEvent), map = { RestMapBlock(state) }) {}
         } else {
-            MessageCard(color, msg) {
+            MessageCard(color, msg, map = { RestMapBlock(state) }) {
                 BigButton("휴게소 안내", color, Modifier.weight(1f), actions::acceptRestStop)
                 BigButton("괜찮아", Color(0xFF334155), Modifier.weight(1f), actions::dismiss)
             }
@@ -206,7 +209,24 @@ private fun PlainView(msg: Message, accent: Color?, extra: @Composable () -> Uni
 }
 
 @Composable
-private fun MessageCard(color: Color, msg: Message, buttons: @Composable RowScope.() -> Unit) {
+private fun RestMapBlock(state: CareState) {
+    val rest = state.restPreview ?: return
+    Spacer(Modifier.height(28.dp))
+    Text(
+        "${if (rest.isRestStop) "졸음쉼터" else "휴게소"} · ${rest.name} · %.1fkm".format(rest.km),
+        color = TextMain, fontSize = 30.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+    Spacer(Modifier.height(12.dp))
+    RestStopMap(state.carPos, rest, Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(24.dp)))
+}
+
+@Composable
+private fun MessageCard(
+    color: Color,
+    msg: Message,
+    map: @Composable () -> Unit = {},
+    buttons: @Composable RowScope.() -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().clip(RoundedCornerShape(32.dp)).background(Panel).padding(64.dp),
         verticalArrangement = Arrangement.Center,
@@ -220,7 +240,8 @@ private fun MessageCard(color: Color, msg: Message, buttons: @Composable RowScop
             Spacer(Modifier.height(20.dp))
             Text(it, color = TextSub, fontSize = 32.sp, style = Phrase)
         }
-        Spacer(Modifier.height(56.dp))
+        map()
+        Spacer(Modifier.height(40.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(32.dp), content = buttons)
     }
 }

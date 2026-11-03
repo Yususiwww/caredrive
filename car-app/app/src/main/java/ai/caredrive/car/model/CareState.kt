@@ -18,6 +18,11 @@ enum class Reason {
     BREAK_OVERDUE,
 }
 
+data class GeoPos(val lat: Double, val lon: Double)
+
+/** Nearest rest area / rest stop suggested to the driver. */
+data class RestPreview(val name: String, val lat: Double, val lon: Double, val km: Double, val isRestStop: Boolean)
+
 /** One heart-rate reading at simulated time [atMs]. */
 data class HrSample(val atMs: Long, val bpm: Int)
 
@@ -41,6 +46,9 @@ data class CareState(
     val nowMs: Long = 0L,
     val restingHr: Int? = null,
     val hrLimit: Int? = null,
+    val carPos: GeoPos? = null,
+    /** Set while a rest-stop suggestion is on screen (L2 / guiding). */
+    val restPreview: RestPreview? = null,
 ) {
     companion object { const val HR_WINDOW_MS = 30 * 60_000L }
 }

@@ -48,6 +48,8 @@ dependencies {
     implementation(libs.pleos.vehicle)
     implementation(libs.pleos.navihelper)
     implementation(libs.pleos.tts)
+    // Our own map (rest-stop preview). The emulator navigation map has no base layers.
+    implementation(libs.maplibre)
 
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)

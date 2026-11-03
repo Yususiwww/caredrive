@@ -32,6 +32,7 @@ class CarServices(
     context: Context,
     private val onEvent: (String) -> Unit,
     private val onGear: (VehicleGear) -> Unit,
+    private val onLocation: (CurrentLocationInfo) -> Unit = {},
 ) {
     private val app = context.applicationContext
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -55,6 +56,7 @@ class CarServices(
     private val naviListener = object : NaviHelperEventListener {
         override fun onCurrentLocationInfo(info: CurrentLocationInfo) {
             location = info
+            onLocation(info)
             if (pendingRestStop) {
                 pendingRestStop = false
                 routeToRestStop(info)
@@ -163,6 +165,12 @@ class CarServices(
 
     private fun driverArea(areas: Collection<SeatArea>): SeatArea? =
         areas.firstOrNull { SeatValue.ROW_1_LEFT in it.values } ?: areas.firstOrNull()
+
+    /** Nearest rest area to show before the driver decides. Null until the car location is known. */
+    fun nearestRestArea(): Pair<RestArea, Double>? {
+        val loc = location ?: run { navi.getCurrentLocationInfo(); return null }
+        return restAreas.nearest(loc.latitude, loc.longitude, loc.heading)
+    }
 
     /** Route to the nearest rest area: as a waypoint if a destination is set, otherwise as the destination. */
     fun addNearestRestStop() {

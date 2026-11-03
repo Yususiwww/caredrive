@@ -8,7 +8,9 @@ import ai.caredrive.car.engine.LiveSignals
 import ai.caredrive.car.engine.RiskEngine
 import ai.caredrive.car.engine.RiskEngine.Companion.MIN
 import ai.caredrive.car.model.CareState
+import ai.caredrive.car.model.GeoPos
 import ai.caredrive.car.model.HrSample
+import ai.caredrive.car.model.RestPreview
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.relay.RelayClient
 import ai.caredrive.car.ui.CareActions
@@ -103,6 +105,7 @@ class MainActivity : ComponentActivity() {
             this,
             onEvent = { msg -> runOnUiThread { state = state.copy(lastEvent = msg) } },
             onGear = { gear -> runOnUiThread { onGearChanged(gear) } },
+            onLocation = { loc -> runOnUiThread { state = state.copy(carPos = GeoPos(loc.latitude, loc.longitude)) } },
         )
         car.start()
         relay = RelayClient(
@@ -133,20 +136,22 @@ class MainActivity : ComponentActivity() {
 
     private fun evaluate() {
         val driving = inputs.drivingOverride ?: !carParked
-        val decision = engine.update(simNow, LiveSignals(inputs.heartRate, inputs.glucose, pendingIhrn), driving)
+        val hr = if (state.connected) inputs.heartRate else inputs.heartRate?.let { it + demoVariation() }
+        val decision = engine.update(simNow, LiveSignals(hr, inputs.glucose, pendingIhrn), driving)
         pendingIhrn = false
         val prev = state
-        val history = recordHr(prev.hrHistory, inputs.heartRate)
+        val history = recordHr(prev.hrHistory, hr)
         val next = prev.copy(
             level = decision.level,
             reason = decision.reason,
-            heartRate = inputs.heartRate,
+            heartRate = hr,
             glucose = inputs.glucose,
             readiness = engine.readiness(),
             drivingMin = decision.drivingMin,
             nextBreakInMin = decision.nextBreakInMin,
             parked = !driving,
             guidingToRest = prev.guidingToRest && decision.level == Level.L2_WARNING,
+            restPreview = if (decision.level == Level.L2_WARNING) prev.restPreview ?: nearestRestPreview() else null,
             hrHistory = history,
             nowMs = simNow,
             restingHr = engine.restingHr(),
@@ -155,6 +160,23 @@ class MainActivity : ComponentActivity() {
         state = next
         if (next.level != prev.level || next.reason != prev.reason) respond(next)
         sendStatus(next)
+    }
+
+    private fun nearestRestPreview(): RestPreview? = car.nearestRestArea()?.let { (r, km) ->
+        RestPreview(r.name, r.lat, r.lon, km, isRestStop = r.kind == "rest_area")
+    }
+
+    private var drift = 0.0
+
+    /**
+     * Demo without a phone: real heart rate is never flat, so add a slow drift and a
+     * breathing rhythm (~5 s) around the preset value. Phone data is used as is.
+     */
+    private fun demoVariation(): Int {
+        drift = drift * 0.8 + (Math.random() - 0.5) * 4
+        // Breathing period of 5.3 s on the simulated clock (not a whole number, so minute steps still vary).
+        val breath = 2.5 * kotlin.math.sin(2 * Math.PI * (simNow / 1000.0) / 5.3)
+        return kotlin.math.round(drift + breath).toInt()
     }
 
     /** Keep one sample per 5 simulated seconds for the last 30 minutes. */

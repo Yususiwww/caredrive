@@ -171,9 +171,18 @@
   $('adv30').onclick = () => send({ type: 'advance', minutes: 30 });
   $('scenario').onclick = () => send({ type: 'scenario' });
 
-  // A watch reports heart rate about once a second; small natural variation makes the car chart realistic.
+  // A watch reports heart rate about once a second. Real heart rate is never flat:
+  // it drifts slowly (random walk pulled back to the slider) and rises and falls with breathing (~5 s).
+  let drift = 0, t = 0;
   setInterval(() => {
-    jitter = $('jitter').checked ? Math.round((Math.random() - 0.5) * 4) : 0;
+    t += 1;
+    if ($('jitter').checked) {
+      drift = drift * 0.85 + (Math.random() - 0.5) * 3;
+      const breath = 2.5 * Math.sin((2 * Math.PI * t) / 5);
+      jitter = Math.round(drift + breath);
+    } else {
+      jitter = 0;
+    }
     labels();
     sendLive();
   }, 1000);

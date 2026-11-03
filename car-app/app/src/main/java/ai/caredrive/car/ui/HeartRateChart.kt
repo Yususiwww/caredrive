@@ -2,8 +2,11 @@ package ai.caredrive.car.ui
 
 import ai.caredrive.car.model.HrSample
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,19 +39,30 @@ fun HeartRateChart(
     modifier: Modifier = Modifier,
     showLabels: Boolean = false,
 ) {
-    val values = samples.map { it.bpm } + listOfNotNull(resting, limit)
-    val lo = ((values.minOrNull() ?: 60) - 10).coerceAtMost(50).toFloat()
-    val hi = ((values.maxOrNull() ?: 100) + 10).coerceAtLeast(110).toFloat()
+    // Scale to the visible readings (±6 bpm, at least a 24 bpm span) so small changes are readable.
+    val visibleBpm = samples.filter { it.atMs >= nowMs - windowMs }.map { it.bpm }
+    val dataLo = visibleBpm.minOrNull() ?: 60
+    val dataHi = visibleBpm.maxOrNull() ?: 100
+    val pad = maxOf(6, (24 - (dataHi - dataLo)) / 2)
+    val lo = (dataLo - pad).toFloat()
+    val hi = (dataHi + pad).toFloat()
 
-    Box(modifier) {
-        Canvas(Modifier.fillMaxSize()) {
+    Column(modifier) {
+        if (showLabels) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("최근 ${windowMs / 60_000}분 · ${visibleBpm.minOrNull() ?: "-"}–${visibleBpm.maxOrNull() ?: "-"} bpm", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.weight(1f))
+                if (limit != null) Text("- - 주의 기준 $limit", color = Color(0xFFEAB308), fontSize = 22.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        Canvas(Modifier.fillMaxWidth().weight(1f)) {
             val start = nowMs - windowMs
             fun x(t: Long) = ((t - start).toFloat() / windowMs).coerceIn(0f, 1f) * size.width
             fun y(v: Int) = size.height - (v - lo) / (hi - lo) * size.height
 
             val dash = PathEffect.dashPathEffect(floatArrayOf(14f, 12f))
-            resting?.let { drawLine(Color(0xFF475569), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
-            limit?.let { drawLine(Color(0xFFEAB308), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
+            resting?.takeIf { it > lo && it < hi }?.let { drawLine(Color(0xFF475569), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
+            limit?.takeIf { it > lo && it < hi }?.let { drawLine(Color(0xFFEAB308), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
 
             val visible = samples.filter { it.atMs >= start }
             if (visible.size >= 2) {
@@ -60,10 +74,9 @@ fun HeartRateChart(
                 drawCircle(lineColor, 7.dp.toPx(), Offset(x(last.atMs), y(last.bpm)))
             }
         }
-        if (showLabels) {
-            Text("최근 ${windowMs / 60_000}분", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.align(Alignment.TopStart))
-            if (limit != null) Text("주의 기준 $limit", color = Color(0xFFEAB308), fontSize = 22.sp, modifier = Modifier.align(Alignment.TopEnd))
-            if (resting != null) Text("안정 심박 $resting", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.align(Alignment.BottomEnd))
+        if (showLabels && resting != null) {
+            Spacer(Modifier.height(8.dp))
+            Text("- - 안정 심박 $resting", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.align(Alignment.End))
         }
     }
 }

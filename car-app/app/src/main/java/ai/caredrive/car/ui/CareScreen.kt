@@ -1,6 +1,7 @@
 package ai.caredrive.car.ui
 
 import ai.caredrive.car.engine.Grade
+import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.model.CareState
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.model.Reason
@@ -72,6 +73,7 @@ interface CareActions {
     fun startEcgGuide()
     fun notifyGuardian()
     fun call119()
+    fun setMood(mood: Mood)
 }
 
 @Composable
@@ -119,6 +121,10 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
             state.glucose?.let {
                 Text("혈당 $it mg/dL", color = if (it < 70) Color(0xFFFB923C) else TextSub, fontSize = 30.sp, fontWeight = FontWeight.Bold)
             }
+            state.stress?.let {
+                val high = state.stressLimit?.let { limit -> it >= limit } == true
+                Text("스트레스 $it", color = if (high) Color(0xFFFB923C) else TextSub, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            }
             state.readiness?.let { r ->
                 Spacer(Modifier.height(28.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -158,7 +164,9 @@ private fun MainCard(state: CareState, actions: CareActions) {
     val color = levelColor(state.level)
     when (state.level) {
         Level.L0_NORMAL -> PlainView(msg, if (state.parked && state.drivingMin == 0) state.readiness?.grade?.let(::gradeColor) else null) {
-            if (state.parked && state.hrHistory.size >= 2) {
+            if (state.parked && state.drivingMin == 0) {
+                MoodCheck(state.mood, actions::setMood)
+            } else if (state.parked && state.hrHistory.size >= 2) {
                 Spacer(Modifier.height(48.dp))
                 Text("심박 추이", color = TextMain, fontSize = 32.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(16.dp))
@@ -205,6 +213,28 @@ private fun PlainView(msg: Message, accent: Color?, extra: @Composable () -> Uni
             Text(it, color = TextSub, fontSize = 30.sp, style = Phrase)
         }
         extra()
+    }
+}
+
+/** One tap before departure; parked only, so it never asks for input while driving. */
+@Composable
+private fun MoodCheck(selected: Mood?, onPick: (Mood) -> Unit) {
+    Spacer(Modifier.height(56.dp))
+    Text("지금 기분은 어떠세요?", color = TextMain, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(20.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Mood.entries.forEach { m ->
+            val on = m == selected
+            Button(
+                onClick = { onPick(m) },
+                modifier = Modifier.weight(1f).height(104.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = if (on) Color(0xFF0F766E) else Chip),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+            ) {
+                Text(Messages.moodLabel(m), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else TextMain, maxLines = 1, softWrap = false)
+            }
+        }
     }
 }
 

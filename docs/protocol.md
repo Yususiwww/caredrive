@@ -11,8 +11,8 @@
 
 | type | 필드 | 뜻 |
 |---|---|---|
-| `condition` | `condition: { sleepMinutes, sleepApnea, energyScore, recentIhrn, restingHr, exerciseEndedMinAgo }` | 출발 전 컨디션 요약 (삼성 헬스). 없는 값은 `null` |
-| `live` | `hr`, `glucose` (mg/dL 또는 `null`) | 실시간 값. 약 1초마다 |
+| `condition` | `condition: { sleepMinutes, sleepApnea, energyScore, recentIhrn, restingHr, exerciseEndedMinAgo, nightSpo2Min, skinTempDeltaC, systolicBp, baselineRmssd, mood }` | 출발 전 컨디션 요약 (삼성 헬스 + 워치 앱 + 직접 입력). 없는 값은 `null`. `mood`는 `GOOD / OK / TIRED / STRESSED`이며, `null`이면 차 화면에서 고른 값을 유지 |
+| `live` | `hr`, `glucose` (mg/dL 또는 `null`), `rmssd` (ms 또는 `null`) | 실시간 값. 약 1초마다. `rmssd`는 워치 앱이 박동 간격으로 계산한 심박변이도이고, 차가 평소 값과 비교해 스트레스(0–100)를 계산 |
 | `ihrn` | – | 새 부정맥 알림 도착 |
 | `drive` | `driving: true / false / null` | 시연용 주행 상태 덮어쓰기. `null`이면 실제 기어 사용 |
 | `advance` | `minutes` | 시연용: 시간을 앞으로 감기 |
@@ -22,7 +22,7 @@
 
 | type | 필드 |
 |---|---|
-| `status` | `level`(L0_NORMAL…L3_STOPPED), `reason`, `parked`, `drivingMin`, `nextBreakInMin`, `grade`, `lastEvent` |
+| `status` | `level`(L0_NORMAL…L3_STOPPED), `reason`, `parked`, `drivingMin`, `nextBreakInMin`, `grade`, `stress`, `mood`, `lastEvent` |
 
 ## 서버 → 양쪽
 

@@ -4,6 +4,8 @@ import ai.caredrive.car.car.CarServices
 import ai.caredrive.car.demo.DemoInputs
 import ai.caredrive.car.demo.DemoScenario
 import ai.caredrive.car.engine.DriverCondition
+import ai.caredrive.car.engine.Hrv
+import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.engine.LiveSignals
 import ai.caredrive.car.engine.RiskEngine
 import ai.caredrive.car.engine.RiskEngine.Companion.MIN
@@ -35,6 +37,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -76,6 +79,11 @@ class MainActivity : ComponentActivity() {
         override fun startEcgGuide() = car.speak("워치에서 삼성 헬스 모니터 앱을 열고 심전도 측정을 눌러 주세요.")
         override fun notifyGuardian() = log("notifyGuardian: phone app sends the message (step 6)")
         override fun call119() = log("call119: phone app places the call (step 6)")
+        override fun setMood(mood: Mood) {
+            setCondition(inputs.condition.copy(mood = mood))
+            evaluate()
+            car.speak(Messages.forState(state).speak ?: "알려 주셔서 고마워요. ${Messages.forState(state).body}.")
+        }
     }
 
     private val tick = object : Runnable {
@@ -137,7 +145,8 @@ class MainActivity : ComponentActivity() {
     private fun evaluate() {
         val driving = inputs.drivingOverride ?: !carParked
         val hr = if (state.connected) inputs.heartRate else inputs.heartRate?.let { it + demoVariation() }
-        val decision = engine.update(simNow, LiveSignals(hr, inputs.glucose, pendingIhrn), driving)
+        val stress = inputs.rmssd?.let { Hrv.stress(it, inputs.condition.baselineRmssd) }
+        val decision = engine.update(simNow, LiveSignals(hr, inputs.glucose, pendingIhrn, stress), driving)
         pendingIhrn = false
         val prev = state
         val history = recordHr(prev.hrHistory, hr)
@@ -146,6 +155,9 @@ class MainActivity : ComponentActivity() {
             reason = decision.reason,
             heartRate = hr,
             glucose = inputs.glucose,
+            stress = stress,
+            stressLimit = engine.stressLimit(),
+            mood = inputs.condition.mood,
             readiness = engine.readiness(),
             drivingMin = decision.drivingMin,
             nextBreakInMin = decision.nextBreakInMin,
@@ -198,6 +210,8 @@ class MainActivity : ComponentActivity() {
             put("drivingMin", s.drivingMin)
             put("nextBreakInMin", s.nextBreakInMin ?: 0)
             put("grade", s.readiness?.grade?.name)
+            put("stress", s.stress)
+            put("mood", s.mood?.name)
             put("lastEvent", s.lastEvent)
         }.toString()
         if (msg != lastSentStatus && relay.send(msg)) lastSentStatus = msg
@@ -217,12 +231,14 @@ class MainActivity : ComponentActivity() {
         if (type != "live") stopScenario()
         when (type) {
             "condition" -> m["condition"]?.let {
-                setCondition(json.decodeFromJsonElement(DriverCondition.serializer(), it))
+                val c = json.decodeFromJsonElement(DriverCondition.serializer(), it)
+                setCondition(if (c.mood == null) c.copy(mood = inputs.condition.mood) else c)
                 if (state.parked) { evaluate(); Messages.forState(state).speak?.let(car::speak) }
             }
             "live" -> inputs = inputs.copy(
                 heartRate = m["hr"]?.jsonPrimitive?.intOrNull,
                 glucose = m["glucose"]?.takeIf { it != JsonNull }?.jsonPrimitive?.intOrNull,
+                rmssd = m["rmssd"]?.takeIf { it != JsonNull }?.jsonPrimitive?.doubleOrNull,
             )
             "ihrn" -> pendingIhrn = true
             "drive" -> inputs = inputs.copy(drivingOverride = m["driving"]?.jsonPrimitive?.booleanOrNull)
@@ -262,17 +278,19 @@ class MainActivity : ComponentActivity() {
             "predrive" -> {
                 setCondition(low)
                 engine.reset()
-                inputs = inputs.copy(heartRate = 72, glucose = null, drivingOverride = false)
+                inputs = inputs.copy(heartRate = 72, glucose = null, rmssd = null, drivingOverride = false)
                 evaluate()
                 // Announce today's condition before departure.
                 Messages.forState(state).speak?.let(car::speak)
             }
-            "drive" -> inputs = inputs.copy(drivingOverride = true, heartRate = 76, glucose = null)
+            "drive" -> inputs = inputs.copy(drivingOverride = true, heartRate = 76, glucose = null, rmssd = null)
             "break" -> {
                 inputs = inputs.copy(drivingOverride = true, heartRate = 78)
                 advance(((state.nextBreakInMin ?: 60).coerceAtLeast(0)) + 1)
             }
             "tense" -> { inputs = inputs.copy(drivingOverride = true, heartRate = 108); advance(6) }
+            // Heart rate below the caution limit, but HRV well under the baseline: stress, not exertion.
+            "stress" -> { inputs = inputs.copy(drivingOverride = true, heartRate = 88, rmssd = 16.0); advance(6) }
             "glucose" -> inputs = inputs.copy(drivingOverride = true, glucose = 62)
             "ihrn" -> { inputs = inputs.copy(drivingOverride = true); pendingIhrn = true }
             "park" -> inputs = inputs.copy(drivingOverride = false)

@@ -35,6 +35,7 @@
   .muted { color: var(--sub); font-size: 13px; }
   .switch { display: flex; align-items: center; gap: 10px; }
   .switch input { width: 20px; height: 20px; accent-color: var(--acc); }
+  select { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
 </style>
 </head>
 <body>
@@ -57,6 +58,7 @@
     <div class="car">
       <span class="level" id="carLevel">-</span><span class="muted" id="carReason"></span>
       <span class="muted">운전</span><span id="carDriving">-</span>
+      <span class="muted">스트레스</span><span id="carStress">-</span>
       <span class="muted">최근 동작</span><span id="carEvent" class="muted">-</span>
     </div>
   </section>
@@ -69,6 +71,17 @@
     <input id="energy" type="range" min="10" max="100" step="1" value="45">
     <div class="row"><label for="resting">안정 심박</label><output id="restingOut"></output></div>
     <input id="resting" type="range" min="45" max="95" step="1" value="68">
+    <div class="row"><label for="spo2">수면 중 최저 산소포화도</label><output id="spo2Out"></output></div>
+    <input id="spo2" type="range" min="82" max="100" step="1" value="95">
+    <div class="row"><label for="skin">피부온도 (평소 대비)</label><output id="skinOut"></output></div>
+    <input id="skin" type="range" min="-1" max="2" step="0.1" value="0.2">
+    <div class="row"><label for="bp">최근 수축기 혈압</label><output id="bpOut"></output></div>
+    <input id="bp" type="range" min="100" max="200" step="1" value="128">
+    <div class="row"><label for="baseRmssd">평소 심박변이도 (워치 앱)</label><output id="baseRmssdOut"></output></div>
+    <input id="baseRmssd" type="range" min="15" max="80" step="1" value="42">
+    <div class="row"><label for="mood">기분 (출발 전 직접 입력)</label>
+      <select id="mood"><option value="">차에서 고르기</option><option value="GOOD">좋아요</option><option value="OK">보통</option><option value="TIRED">피곤해요</option><option value="STRESSED">스트레스</option></select>
+    </div>
     <div class="row switch"><input id="apnea" type="checkbox"><label for="apnea">수면무호흡 감지 기록</label></div>
     <div class="row switch"><input id="recentIhrn" type="checkbox"><label for="recentIhrn">최근 부정맥 알림</label></div>
     <div class="row switch"><input id="exercise" type="checkbox"><label for="exercise">30분 안에 운동함</label></div>
@@ -81,6 +94,8 @@
     <input id="hr" type="range" min="35" max="160" step="1" value="74">
     <div class="row switch"><input id="glucoseOn" type="checkbox"><label for="glucoseOn">연속혈당측정기 연결</label><output id="glucoseOut"></output></div>
     <input id="glucose" type="range" min="40" max="200" step="1" value="105" disabled>
+    <div class="row switch"><input id="hrvOn" type="checkbox"><label for="hrvOn">심박변이도 (워치 앱 박동 간격)</label><output id="rmssdOut"></output></div>
+    <input id="rmssd" type="range" min="8" max="80" step="1" value="40" disabled>
     <div class="row"><label for="jitter">심박 자연스럽게 흔들기</label><input id="jitter" type="checkbox" checked></div>
   </section>
 
@@ -102,8 +117,9 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const LEVEL = { L0_NORMAL: ['정상', '--l0'], L1_CAUTION: ['주의', '--l1'], L2_WARNING: ['경고', '--l2'], L3_STOPPED: ['정차 후 조치', '--l3'] };
+  const MOOD = { GOOD: '좋아요', OK: '보통', TIRED: '피곤해요', STRESSED: '스트레스' };
   const REASON = {
-    NONE: '', HR_SUSTAINED: '심박 높음 지속', HR_HIGH: '심박 매우 높음', HR_LOW: '심박 매우 낮음',
+    NONE: '', HR_SUSTAINED: '심박 높음 지속', STRESS_HIGH: '스트레스 높음 지속', HR_HIGH: '심박 매우 높음', HR_LOW: '심박 매우 낮음',
     IHRN_NEW: '부정맥 알림', GLUCOSE_LOW: '저혈당', BREAK_DUE: '휴식 시간', BREAK_OVERDUE: '휴식 시간 초과',
   };
 
@@ -131,6 +147,7 @@
     $('carReason').textContent = REASON[s.reason] ?? s.reason;
     $('carDriving').textContent = s.parked ? '정차' : `${s.drivingMin}분째 · 다음 휴식 ${Math.max(0, s.nextBreakInMin)}분`;
     $('carEvent').textContent = s.lastEvent ?? '-';
+    $('carStress').textContent = (s.stress ?? '-') + (s.mood ? ` · 기분 ${MOOD[s.mood]}` : '');
   }
 
   const condition = () => ({
@@ -140,6 +157,11 @@
     sleepApnea: $('apnea').checked,
     recentIhrn: $('recentIhrn').checked,
     exerciseEndedMinAgo: $('exercise').checked ? 10 : null,
+    nightSpo2Min: +$('spo2').value,
+    skinTempDeltaC: +$('skin').value,
+    systolicBp: +$('bp').value,
+    baselineRmssd: +$('baseRmssd').value,
+    mood: $('mood').value || null,
   });
   const sendCondition = () => send({ type: 'condition', condition: condition() });
 
@@ -148,7 +170,10 @@
     type: 'live',
     hr: +$('hr').value + jitter,
     glucose: $('glucoseOn').checked ? +$('glucose').value : null,
+    rmssd: $('hrvOn').checked ? +$('rmssd').value : null,
   });
+  // Same formula as the car (Hrv.stress): 0 at baseline, 100 at 40% of baseline.
+  const stressOf = (rmssd) => Math.max(0, Math.min(100, Math.round((1 - rmssd / +$('baseRmssd').value) / 0.6 * 100)));
 
   function labels() {
     const m = +$('sleep').value;
@@ -158,10 +183,16 @@
     $('hrOut').textContent = `${+$('hr').value + jitter} bpm`;
     $('glucoseOut').textContent = $('glucoseOn').checked ? `${$('glucose').value} mg/dL` : '';
     $('glucose').disabled = !$('glucoseOn').checked;
+    $('spo2Out').textContent = `${$('spo2').value}%`;
+    $('skinOut').textContent = `${+$('skin').value > 0 ? '+' : ''}${(+$('skin').value).toFixed(1)}℃`;
+    $('bpOut').textContent = `${$('bp').value} mmHg`;
+    $('baseRmssdOut').textContent = `${$('baseRmssd').value} ms`;
+    $('rmssdOut').textContent = $('hrvOn').checked ? `${$('rmssd').value} ms · 스트레스 ${stressOf(+$('rmssd').value)}` : '';
+    $('rmssd').disabled = !$('hrvOn').checked;
   }
 
-  ['sleep', 'energy', 'resting'].forEach((id) => $(id).addEventListener('input', labels));
-  ['hr', 'glucose', 'glucoseOn'].forEach((id) => $(id).addEventListener('input', () => { labels(); sendLive(); }));
+  ['sleep', 'energy', 'resting', 'spo2', 'skin', 'bp', 'baseRmssd'].forEach((id) => $(id).addEventListener('input', labels));
+  ['hr', 'glucose', 'glucoseOn', 'rmssd', 'hrvOn'].forEach((id) => $(id).addEventListener('input', () => { labels(); sendLive(); }));
   $('sendCondition').onclick = sendCondition;
   $('sendIhrn').onclick = () => send({ type: 'ihrn' });
   $('driveOn').onclick = () => send({ type: 'drive', driving: true });

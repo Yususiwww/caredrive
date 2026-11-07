@@ -1,5 +1,6 @@
 package ai.caredrive.car.model
 
+import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.engine.Readiness
 
 /** Risk level decided from driver condition and live signals. See docs/decisions. */
@@ -9,6 +10,8 @@ enum class Reason {
     NONE,
     /** Heart rate above the personal limit for a while (tension, stress). */
     HR_SUSTAINED,
+    /** HRV-based stress above the limit for a while. */
+    STRESS_HIGH,
     HR_HIGH,
     HR_LOW,
     IHRN_NEW,
@@ -31,6 +34,11 @@ data class CareState(
     val reason: Reason = Reason.NONE,
     val heartRate: Int? = null,
     val glucose: Int? = null,
+    /** 0–100 HRV stress estimate, null without watch HRV. */
+    val stress: Int? = null,
+    val stressLimit: Int? = null,
+    /** Mood the driver picked before departure. */
+    val mood: Mood? = null,
     val readiness: Readiness? = null,
     val drivingMin: Int = 0,
     val nextBreakInMin: Int? = null,

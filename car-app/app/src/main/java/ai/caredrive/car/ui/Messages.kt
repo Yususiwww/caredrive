@@ -1,6 +1,7 @@
 package ai.caredrive.car.ui
 
 import ai.caredrive.car.engine.Grade
+import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.model.CareState
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.model.Reason
@@ -13,6 +14,13 @@ object Messages {
         Grade.GOOD -> "좋음"
         Grade.FAIR -> "보통"
         Grade.LOW -> "주의"
+    }
+
+    fun moodLabel(m: Mood) = when (m) {
+        Mood.GOOD -> "좋아요"
+        Mood.OK -> "보통"
+        Mood.TIRED -> "피곤해요"
+        Mood.STRESSED -> "스트레스"
     }
 
     fun breakLine(state: CareState): String? {
@@ -57,6 +65,12 @@ object Messages {
             s.readiness?.factors?.firstOrNull()?.let { "오늘은 ${it.label}이라 평소보다 자주 쉬어 가요" },
             speak = "운전한 지 ${s.drivingMin}분이 지났어요. 다음 쉼터에서 쉬어 가세요. 실내를 시원하게 맞출게요.",
         )
+        Reason.STRESS_HIGH -> Message(
+            "스트레스가 높아 보여요",
+            "실내를 시원하게 맞췄어요.\n4초 들이쉬고 6초 내쉬어 보세요.",
+            "심박 변이도가 평소보다 낮은 상태가 이어지고 있어요",
+            speak = "스트레스가 높아 보여요. 실내를 시원하게 맞출게요. 4초 동안 들이쉬고, 6초 동안 천천히 내쉬어 보세요.",
+        )
         else -> Message(
             "조금 긴장하신 것 같아요",
             "실내를 시원하게 맞췄어요.\n천천히 숨을 쉬어 보세요.",
@@ -71,6 +85,7 @@ object Messages {
             Reason.IHRN_NEW -> "심장 리듬 알림이 왔어요" to ask
             Reason.HR_LOW -> "심박이 평소보다 많이 낮아요" to ask
             Reason.HR_HIGH, Reason.HR_SUSTAINED -> "심박이 계속 높아요" to ask
+            Reason.STRESS_HIGH -> "스트레스가 계속 높아요" to "잠시 쉬었다 가면 좋겠어요.\n$ask"
             Reason.GLUCOSE_LOW -> "혈당이 낮아요" to "가까운 휴게소에서 당을 보충하세요.\n안내할까요?"
             else -> "휴식이 필요해요" to "운전한 지 ${s.drivingMin}분째예요.\n$ask"
         }

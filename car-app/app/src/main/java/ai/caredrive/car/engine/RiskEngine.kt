@@ -10,6 +10,8 @@ data class LiveSignals(
     val glucose: Int? = null,
     /** A new irregular heart rhythm notification arrived since the last update. */
     val newIhrn: Boolean = false,
+    /** 0–100 stress estimate from HRV (see [Hrv]); null without a watch app. */
+    val stress: Int? = null,
 )
 
 data class Decision(
@@ -29,13 +31,18 @@ data class Decision(
 class RiskEngine(private var readiness: Readiness = ConditionRules.assess(DriverCondition())) {
     private var restingHr: Int = DEFAULT_RESTING_HR
     private var recentExercise = false
+    private var moodStressed = false
 
     private var drivingSince: Long? = null
     private var parkedSince: Long? = null
     private var hrHighSince: Long? = null
+    private var stressHighSince: Long? = null
     private var cautionSince: Long? = null
     private var ihrnPending = false
     private var last = Decision(Level.L0_NORMAL, Reason.NONE, 0, readiness.breakIntervalMin)
+    /** Stress at or above this for 5 minutes is a caution; lower when the driver said they are stressed. */
+    fun stressLimit() = if (moodStressed) STRESS_LIMIT_MOOD else STRESS_LIMIT
+
     /** Driver said "괜찮아": the same reason stays quiet until this time. */
     private var snoozeUntil = 0L
     private var snoozedReason = Reason.NONE
@@ -44,6 +51,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         readiness = ConditionRules.assess(c)
         restingHr = c.restingHr ?: DEFAULT_RESTING_HR
         recentExercise = (c.exerciseEndedMinAgo ?: Int.MAX_VALUE) <= 30
+        moodStressed = c.mood == Mood.STRESSED
     }
 
     fun readiness() = readiness
@@ -65,7 +73,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
 
     /** Start a new trip: forget driving time, signals and snoozes. */
     fun reset() {
-        drivingSince = null; parkedSince = null; hrHighSince = null; cautionSince = null
+        drivingSince = null; parkedSince = null; hrHighSince = null; stressHighSince = null; cautionSince = null
         ihrnPending = false; snoozeUntil = 0L; snoozedReason = Reason.NONE
         last = Decision(Level.L0_NORMAL, Reason.NONE, 0, readiness.breakIntervalMin)
     }
@@ -90,6 +98,9 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         val hrLimit = hrLimit()
         hrHighSince = if (hr != null && hr >= hrLimit) hrHighSince ?: now else null
         val hrHighMin = hrHighSince?.let { (now - it) / MIN } ?: 0
+        val stress = live.stress
+        stressHighSince = if (stress != null && stress >= stressLimit()) stressHighSince ?: now else null
+        val stressHighMin = stressHighSince?.let { (now - it) / MIN } ?: 0
 
         val warning: Reason? = when {
             ihrnPending -> Reason.IHRN_NEW
@@ -101,6 +112,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         }
         val caution: Reason? = when {
             hrHighMin >= HR_SUSTAINED_MIN -> Reason.HR_SUSTAINED
+            stressHighMin >= STRESS_SUSTAINED_MIN -> Reason.STRESS_HIGH
             nextBreak <= 0 -> Reason.BREAK_DUE
             else -> null
         }
@@ -148,6 +160,9 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         const val HR_VERY_HIGH = 140
         const val GLUCOSE_LOW = 70
         const val HR_SUSTAINED_MIN = 5
+        const val STRESS_LIMIT = 70
+        const val STRESS_LIMIT_MOOD = 60
+        const val STRESS_SUSTAINED_MIN = 5
         const val CAUTION_ESCALATE_MIN = 15
         const val OVERDUE_MIN = 30
         const val BREAK_RESET_MIN = 10

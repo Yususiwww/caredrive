@@ -10,6 +10,8 @@ data class DemoInputs(
     val condition: DriverCondition = DriverCondition(),
     val heartRate: Int? = 72,
     val glucose: Int? = null,
+    /** HRV (RMSSD, ms) from the watch app; null = no watch app. */
+    val rmssd: Double? = null,
     /** null = use the real gear from the car. */
     val drivingOverride: Boolean? = null,
 )

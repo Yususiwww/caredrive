@@ -65,7 +65,7 @@ python3 demo/compose.py /tmp/caredrive-demo  # 나란히 합치고 장면 제목
 adb shell am broadcast -a ai.caredrive.car.DEMO -p ai.caredrive.car --es preset scenario
 ```
 
-- preset: `predrive` `drive` `break` `tense` `glucose` `ihrn` `park` `scenario`
+- preset: `predrive` `drive` `break` `tense` `stress` `glucose` `ihrn` `park` `scenario`
 - 개별 값: `--ei hr 110` `--ei glucose 62` `--ez ihrn true` `--ez drive true` `--ei advance 30`(분)
 - `scenario`: 수면 부족 출발 → 1시간 휴식 알림 → 심박 상승 → 부정맥 알림을 60배속으로 약 75초에 재생
 

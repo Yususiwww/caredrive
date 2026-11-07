@@ -103,4 +103,42 @@ class RiskEngineTest {
         assertEquals(30, d.drivingMin)
         assertEquals(Level.L0_NORMAL, d.level)
     }
+
+    @Test fun overnightSignals_lowerTheGrade() {
+        assertEquals(Grade.LOW, ConditionRules.assess(DriverCondition(nightSpo2Min = 88)).grade)
+        assertEquals(Grade.FAIR, ConditionRules.assess(DriverCondition(nightSpo2Min = 92)).grade)
+        assertEquals(Grade.FAIR, ConditionRules.assess(DriverCondition(skinTempDeltaC = 0.6)).grade)
+        assertEquals(Grade.LOW, ConditionRules.assess(DriverCondition(skinTempDeltaC = 1.2)).grade)
+        assertEquals(Grade.FAIR, ConditionRules.assess(DriverCondition(systolicBp = 165)).grade)
+        assertEquals(Grade.GOOD, ConditionRules.assess(DriverCondition(nightSpo2Min = 96, skinTempDeltaC = 0.2, systolicBp = 125)).grade)
+    }
+
+    @Test fun tiredOrStressedMood_isFair() {
+        assertEquals(Grade.FAIR, ConditionRules.assess(DriverCondition(mood = Mood.TIRED)).grade)
+        assertEquals(Grade.FAIR, ConditionRules.assess(DriverCondition(mood = Mood.STRESSED)).grade)
+        assertEquals(Grade.GOOD, ConditionRules.assess(DriverCondition(mood = Mood.GOOD)).grade)
+    }
+
+    @Test fun rmssd_ignoresArtifacts() {
+        val steady = List(20) { if (it % 2 == 0) 800 else 840 }
+        assertEquals(40.0, Hrv.rmssd(steady)!!, 0.01)
+        // A missed beat (1640 ms) and a spike (250 ms) are dropped instead of inflating RMSSD.
+        assertEquals(40.0, Hrv.rmssd(steady + listOf(1640, 250) + steady)!!, 0.01)
+        assertEquals(null, Hrv.rmssd(listOf(800, 820, 810)))
+    }
+
+    @Test fun stress_isRelativeToBaseline() {
+        assertEquals(0, Hrv.stress(45.0, 40))
+        assertEquals(100, Hrv.stress(16.0, 40))
+        assertEquals(50, Hrv.stress(28.0, 40))
+    }
+
+    @Test fun sustainedStress_isCaution_andMoodLowersLimit() {
+        val d = engine().drive(0, 6, LiveSignals(heartRate = 85, stress = 75))
+        assertEquals(Level.L1_CAUTION, d.level)
+        assertEquals(Reason.STRESS_HIGH, d.reason)
+        assertEquals(Level.L0_NORMAL, engine().drive(0, 6, LiveSignals(heartRate = 85, stress = 65)).level)
+        val stressed = engine(DriverCondition(restingHr = 70, mood = Mood.STRESSED))
+        assertEquals(Reason.STRESS_HIGH, stressed.drive(0, 6, LiveSignals(heartRate = 85, stress = 65)).reason)
+    }
 }

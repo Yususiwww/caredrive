@@ -6,14 +6,32 @@ import ai.caredrive.car.model.CareState
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.model.Reason
 
-/** What the screen shows and what the car says for one situation. Single source for UI and TTS. */
-data class Message(val title: String, val body: String, val note: String? = null, val speak: String? = null)
+/**
+ * What the screen shows and what the car says for one situation. Single source for UI and TTS.
+ * Title plus one short sentence (about 20 characters while driving). When [spoken], the voice reads
+ * exactly the title and body, the same words as the screen (EU DDAW rule). The note is never spoken.
+ */
+data class Message(val title: String, val body: String, val note: String? = null, val spoken: Boolean = false) {
+    val speak: String? get() = if (spoken) sayAloud() else null
+
+    /** Title and body as one utterance, also used when the driver asks for it (mood pick). */
+    fun sayAloud() = listOf(title, body).joinToString(" ") { line ->
+        line.replace("\n", " ").let { if (it.endsWith("?") || it.endsWith(".")) it else "$it." }
+    }
+}
 
 object Messages {
     fun gradeLabel(g: Grade) = when (g) {
         Grade.GOOD -> "좋음"
         Grade.FAIR -> "보통"
         Grade.LOW -> "주의"
+    }
+
+    fun levelLabel(level: Level) = when (level) {
+        Level.L0_NORMAL -> "정상"
+        Level.L1_CAUTION -> "주의"
+        Level.L2_WARNING -> "경고"
+        Level.L3_STOPPED -> "정차 후 조치"
     }
 
     fun moodLabel(m: Mood) = when (m) {
@@ -26,8 +44,10 @@ object Messages {
     fun breakLine(state: CareState): String? {
         val next = state.nextBreakInMin ?: return null
         if (state.parked && state.drivingMin == 0) return state.readiness?.let { "오늘은 ${it.breakIntervalMin / 60.0}시간마다 휴식".replace(".0", "") }
-        return if (next > 0) "다음 휴식까지 ${next}분" else "운전 ${state.drivingMin}분째 · 휴식 시간 지남"
+        return if (next > 0) "다음 휴식 ${next}분 뒤" else "휴식 시간 지남"
     }
+
+    val guiding = Message("휴게소로 안내 중이에요", "도착하면 잠시 쉬어 가세요", spoken = true)
 
     fun forState(s: CareState): Message = when (s.level) {
         Level.L0_NORMAL -> if (s.parked && s.drivingMin == 0) preDrive(s) else normal(s)
@@ -38,74 +58,57 @@ object Messages {
 
     private fun preDrive(s: CareState): Message {
         val r = s.readiness ?: return Message("출발 준비가 됐어요", "운전 중 컨디션을 함께 살필게요")
-        val factors = r.factors.joinToString(" · ") { it.label }
+        val factors = r.factors.joinToString(" · ") { it.label }.ifBlank { null }
         return when (r.grade) {
-            Grade.GOOD -> Message("오늘 컨디션 좋아요", "2시간마다 쉬어 가기를 권해 드릴게요", factors.ifBlank { null })
-            Grade.FAIR -> Message(
-                "오늘 컨디션은 보통이에요", "1시간 30분마다 쉬어 가기를 권해 드릴게요", factors,
-                speak = "오늘 컨디션은 보통이에요. 1시간 30분마다 쉬어 가기를 권해 드릴게요.",
-            )
-            Grade.LOW -> Message(
-                "오늘은 조금 무리하지 마세요", "1시간마다 쉬어 가기를 권해 드릴게요", factors,
-                speak = "오늘은 컨디션이 좋지 않아요. 1시간마다 쉬어 가기를 권해 드릴게요.",
-            )
+            Grade.GOOD -> Message("오늘 컨디션 좋아요", "2시간마다 쉬어 가요", factors)
+            Grade.FAIR -> Message("오늘 컨디션은 보통이에요", "1시간 30분마다 쉬어 가요", factors, spoken = true)
+            Grade.LOW -> Message("오늘은 무리하지 마세요", "1시간마다 쉬어 가요", factors, spoken = true)
         }
     }
 
     private fun normal(s: CareState) = if (s.parked) {
-        Message("잠시 멈춰 있어요", "10분 이상 쉬면 휴식 시간이 다시 계산돼요")
+        Message("잠시 멈춰 있어요", "10분 쉬면 휴식 시간이 다시 계산돼요")
     } else {
-        Message("편안한 운전 중이에요", breakLine(s) ?: "이상이 있으면 음성으로 알려 드릴게요")
+        Message("편안한 운전 중이에요", breakLine(s) ?: "이상이 있으면 알려 드릴게요")
     }
 
     private fun caution(s: CareState) = when (s.reason) {
         Reason.BREAK_DUE -> Message(
-            "쉬어 갈 시간이에요",
-            "운전한 지 ${s.drivingMin}분이 지났어요.\n실내를 시원하게 맞췄어요.",
-            s.readiness?.factors?.firstOrNull()?.let { "오늘은 ${it.label}이라 평소보다 자주 쉬어 가요" },
-            speak = "운전한 지 ${s.drivingMin}분이 지났어요. 다음 쉼터에서 쉬어 가세요. 실내를 시원하게 맞출게요.",
+            "쉬어 갈 시간이에요", "다음 쉼터에서 쉬어 가세요",
+            listOfNotNull("운전 ${s.drivingMin}분째", s.readiness?.factors?.firstOrNull()?.label).joinToString(" · "),
+            spoken = true,
         )
-        Reason.STRESS_HIGH -> Message(
-            "스트레스가 높아 보여요",
-            "실내를 시원하게 맞췄어요.\n4초 들이쉬고 6초 내쉬어 보세요.",
-            "심박 변이도가 평소보다 낮은 상태가 이어지고 있어요",
-            speak = "스트레스가 높아 보여요. 실내를 시원하게 맞출게요. 4초 동안 들이쉬고, 6초 동안 천천히 내쉬어 보세요.",
-        )
-        else -> Message(
-            "조금 긴장하신 것 같아요",
-            "실내를 시원하게 맞췄어요.\n천천히 숨을 쉬어 보세요.",
-            "평소보다 심박이 높은 상태가 이어지고 있어요",
-            speak = "조금 긴장하신 것 같아요. 실내를 시원하게 맞출게요. 천천히 숨을 쉬어 보세요.",
-        )
+        Reason.STRESS_HIGH -> Message("스트레스가 높아 보여요", "4초 들이쉬고 6초 내쉬어 보세요", "실내를 시원하게 맞춰요", spoken = true)
+        else -> Message("조금 긴장하신 것 같아요", "천천히 숨을 쉬어 보세요", "심박이 평소보다 높아요 · 실내를 시원하게 맞춰요", spoken = true)
     }
 
     private fun warning(s: CareState): Message {
-        val ask = "가까운 휴게소로 안내할까요?"
-        val (title, body) = when (s.reason) {
-            Reason.IHRN_NEW -> "심장 리듬 알림이 왔어요" to ask
-            Reason.HR_LOW -> "심박이 평소보다 많이 낮아요" to ask
-            Reason.HR_HIGH, Reason.HR_SUSTAINED -> "심박이 계속 높아요" to ask
-            Reason.STRESS_HIGH -> "스트레스가 계속 높아요" to "잠시 쉬었다 가면 좋겠어요.\n$ask"
-            Reason.GLUCOSE_LOW -> "혈당이 낮아요" to "가까운 휴게소에서 당을 보충하세요.\n안내할까요?"
-            else -> "휴식이 필요해요" to "운전한 지 ${s.drivingMin}분째예요.\n$ask"
+        val ask = "휴게소로 안내할까요?"
+        val title = when (s.reason) {
+            Reason.IHRN_NEW -> "심장 리듬 알림이 왔어요"
+            Reason.HR_LOW -> "심박이 많이 낮아요"
+            Reason.HR_HIGH, Reason.HR_SUSTAINED -> "심박이 계속 높아요"
+            Reason.STRESS_HIGH -> "스트레스가 계속 높아요"
+            Reason.GLUCOSE_LOW -> "혈당이 낮아요"
+            else -> "휴식이 필요해요"
         }
-        return Message(title, body, "\"응\" 또는 \"괜찮아\"라고 말해도 돼요", speak = "$title. ${body.replace("\n", " ")}")
+        val note = when (s.reason) {
+            Reason.GLUCOSE_LOW -> "휴게소에서 당을 보충하세요"
+            Reason.BREAK_DUE, Reason.BREAK_OVERDUE -> "운전 ${s.drivingMin}분째"
+            else -> "\"응\" 또는 \"괜찮아\"로 답해도 돼요"
+        }
+        return Message(title, ask, note, spoken = true)
     }
 
     private fun stopped(s: CareState) = when (s.reason) {
         Reason.IHRN_NEW -> Message(
-            "잠시 쉬어 가세요", "워치로 심전도를 측정해 보는 걸 권해요.",
-            "케어드라이브는 진단하지 않아요. 증상이 있으면 의료진과 상의하세요.",
-            speak = "잠시 쉬어 가세요. 워치로 심전도를 측정해 보는 걸 권해요.",
+            "잠시 쉬어 가세요", "워치로 심전도를 재 보세요",
+            "케어드라이브는 진단하지 않아요. 증상이 있으면 의료진과 상의하세요.", spoken = true,
         )
         Reason.GLUCOSE_LOW -> Message(
-            "당을 보충하고 쉬어 가세요", "혈당이 오를 때까지 운전을 멈춰 주세요.",
-            "어지럽거나 식은땀이 나면 주변에 도움을 요청하세요.",
-            speak = "당을 보충하고 쉬어 가세요. 혈당이 오를 때까지 운전을 멈춰 주세요.",
+            "당을 보충하고 쉬어 가세요", "혈당이 오를 때까지 기다려 주세요",
+            "어지럽거나 식은땀이 나면 주변에 도움을 요청하세요.", spoken = true,
         )
-        else -> Message(
-            "잠시 쉬어 가세요", "스트레칭하고 물을 마셔 보세요.\n10분 쉬면 휴식 시간이 다시 계산돼요.",
-            speak = "잘 멈추셨어요. 스트레칭하고 잠시 쉬어 가세요.",
-        )
+        else -> Message("잘 멈추셨어요", "스트레칭하고 물을 마셔 보세요", "10분 쉬면 휴식 시간이 다시 계산돼요.", spoken = true)
     }
 }

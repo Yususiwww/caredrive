@@ -46,6 +46,8 @@ import kotlinx.serialization.json.put
 class MainActivity : ComponentActivity() {
     private var state by mutableStateOf(CareState())
     private var demoStatus by mutableStateOf<String?>(null)
+    /** Demo: show the narrow (split-window) layout on the full-size emulator. */
+    private var forceCompact by mutableStateOf(false)
     private lateinit var car: CarServices
     private lateinit var relay: RelayClient
     private var lastSentStatus: String? = null
@@ -66,23 +68,29 @@ class MainActivity : ComponentActivity() {
 
     private val actions = object : CareActions {
         override fun acceptRestStop() {
-            car.speak("가까운 휴게소로 안내할게요.")
+            car.speak(Messages.guiding.sayAloud())
             car.addNearestRestStop()
             state = state.copy(guidingToRest = true)
         }
         override fun dismiss() {
-            car.speak("알겠어요. 계속 지켜볼게요.")
+            // Spoken and shown with the same words.
+            val reply = "알겠어요. 계속 지켜볼게요."
+            car.speak(reply)
             engine.dismiss(simNow)
-            state = state.copy(guidingToRest = false)
+            state = state.copy(guidingToRest = false, lastEvent = reply)
             evaluate()
         }
-        override fun startEcgGuide() = car.speak("워치에서 삼성 헬스 모니터 앱을 열고 심전도 측정을 눌러 주세요.")
+        override fun startEcgGuide() {
+            val guide = "워치에서 삼성 헬스 모니터 앱을 열고 심전도 측정을 눌러 주세요."
+            car.speak(guide)
+            state = state.copy(lastEvent = guide)
+        }
         override fun notifyGuardian() = log("notifyGuardian: phone app sends the message (step 6)")
         override fun call119() = log("call119: phone app places the call (step 6)")
         override fun setMood(mood: Mood) {
             setCondition(inputs.condition.copy(mood = mood))
             evaluate()
-            car.speak(Messages.forState(state).speak ?: "알려 주셔서 고마워요. ${Messages.forState(state).body}.")
+            car.speak(Messages.forState(state).sayAloud())
         }
     }
 
@@ -103,6 +111,7 @@ class MainActivity : ComponentActivity() {
             if (intent.hasExtra("drive")) inputs = inputs.copy(drivingOverride = intent.getBooleanExtra("drive", false))
             if (intent.getBooleanExtra("ihrn", false)) pendingIhrn = true
             if (intent.hasExtra("advance")) advance(intent.getIntExtra("advance", 0))
+            if (intent.hasExtra("compact")) forceCompact = intent.getBooleanExtra("compact", false)
             evaluate()
         }
     }
@@ -128,7 +137,7 @@ class MainActivity : ComponentActivity() {
         }
         main.post(tick)
         setContent {
-            CareScreen(state, actions) {
+            CareScreen(state, actions, forceCompact) {
                 if (BuildConfig.DEBUG) DemoBar(demoStatus) { applyPreset(it); evaluate() }
             }
         }

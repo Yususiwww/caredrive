@@ -50,8 +50,8 @@ fun HeartRateChart(
     Column(modifier) {
         if (showLabels) {
             Row(Modifier.fillMaxWidth()) {
-                Text("최근 ${windowMs / 60_000}분 · ${visibleBpm.minOrNull() ?: "-"}–${visibleBpm.maxOrNull() ?: "-"} bpm", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.weight(1f))
-                if (limit != null) Text("- - 주의 기준 $limit", color = Color(0xFFEAB308), fontSize = 22.sp)
+                Text("최근 ${windowMs / 60_000}분 · ${visibleBpm.minOrNull() ?: "-"}–${visibleBpm.maxOrNull() ?: "-"} bpm", color = Color(0xFF94A3B8), fontSize = 30.sp, modifier = Modifier.weight(1f))
+                if (limit != null) Text("- - 주의 기준 $limit", color = Color(0xFFEAB308), fontSize = 30.sp)
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -76,7 +76,7 @@ fun HeartRateChart(
         }
         if (showLabels && resting != null) {
             Spacer(Modifier.height(8.dp))
-            Text("- - 안정 심박 $resting", color = Color(0xFF94A3B8), fontSize = 22.sp, modifier = Modifier.align(Alignment.End))
+            Text("- - 안정 심박 $resting", color = Color(0xFF94A3B8), fontSize = 30.sp, modifier = Modifier.align(Alignment.End))
         }
     }
 }

@@ -66,6 +66,7 @@ adb shell am broadcast -a ai.caredrive.car.DEMO -p ai.caredrive.car --es preset 
 ```
 
 - preset: `predrive` `drive` `break` `tense` `stress` `glucose` `ihrn` `park` `scenario`
+- 좁은 창(Pleos 화면 분할) 배치 보기: `--ez compact true` (되돌리기: `--ez compact false`)
 - 개별 값: `--ei hr 110` `--ei glucose 62` `--ez ihrn true` `--ez drive true` `--ei advance 30`(분)
 - `scenario`: 수면 부족 출발 → 1시간 휴식 알림 → 심박 상승 → 부정맥 알림을 60배속으로 약 75초에 재생
 

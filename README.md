@@ -65,7 +65,8 @@ python3 demo/compose.py /tmp/caredrive-demo  # 나란히 합치고 장면 제목
 adb shell am broadcast -a ai.caredrive.car.DEMO -p ai.caredrive.car --es preset scenario
 ```
 
-- preset: `predrive` `drive` `break` `tense` `stress` `glucose` `ihrn` `park` `scenario`
+- preset: `predrive` `drive` `break` `tense` `stress` `glucose` `ihrn` `park` `nodata`(워치 데이터 끊김) `scenario`
+- 119 카운트다운 보기: `--ez call119 true` (10초 뒤 폰에 전화 요청, 화면에서 취소 가능)
 - 좁은 창(Pleos 화면 분할) 배치 보기: `--ez compact true` (되돌리기: `--ez compact false`)
 - 개별 값: `--ei hr 110` `--ei glucose 62` `--ez ihrn true` `--ez drive true` `--ei advance 30`(분)
 - `scenario`: 수면 부족 출발 → 1시간 휴식 알림 → 심박 상승 → 부정맥 알림을 60배속으로 약 75초에 재생
@@ -78,6 +79,8 @@ cd car-app
 ./gradlew :app:installDebug
 adb shell am start -n ai.caredrive.car/.MainActivity
 ```
+
+글꼴: Pleos 시스템 글꼴 Asta Sans(SIL OFL 1.1, `car-app/third_party/AstaSans-OFL.txt`)를 앱에 넣어 쓴다.
 
 JDK 17 필요 (Android Studio 내장 JBR 사용 가능). 디버그 빌드 하단의 DEMO 버튼으로 단계 화면을 바꿔 볼 수 있습니다.
 

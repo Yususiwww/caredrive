@@ -21,6 +21,16 @@ enum class Reason {
     BREAK_OVERDUE,
 }
 
+/** Whether the watch data on screen is current. Shown honestly instead of silently using old numbers. */
+enum class DataState {
+    /** Fresh readings (or the built-in demo values when no phone has connected yet). */
+    LIVE,
+    /** Phone connected but no reading for a while (watch off the wrist, Bluetooth lost). */
+    STALE,
+    /** Phone that was sending data is no longer connected. */
+    OFF,
+}
+
 data class GeoPos(val lat: Double, val lon: Double)
 
 /** Nearest rest area / rest stop suggested to the driver. */
@@ -57,6 +67,9 @@ data class CareState(
     val carPos: GeoPos? = null,
     /** Set while a rest-stop suggestion is on screen (L2 / guiding). */
     val restPreview: RestPreview? = null,
+    val data: DataState = DataState.LIVE,
+    /** Seconds left before 119 is called; null when no call is pending. The driver can cancel. */
+    val emergencyCountdown: Int? = null,
 ) {
     companion object { const val HR_WINDOW_MS = 30 * 60_000L }
 }

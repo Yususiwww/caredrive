@@ -28,4 +28,16 @@ class MessagesTest {
             assertEquals("${m.title}. ${m.body}$end", m.speak)
         }
     }
+
+    @Test fun afterStop_givesInstructions() {
+        listOf(Reason.IHRN_NEW, Reason.GLUCOSE_LOW, Reason.BREAK_DUE).forEach { r ->
+            val m = Messages.forState(CareState(level = Level.L3_STOPPED, reason = r, parked = true, drivingMin = 65))
+            assertTrue("not an instruction: ${m.title}", m.title.endsWith("주세요"))
+        }
+    }
+
+    @Test fun stressCaution_isASuggestionWithoutScore() {
+        val m = Messages.forState(CareState(level = Level.L1_CAUTION, reason = Reason.STRESS_HIGH, stress = 90, parked = false))
+        assertTrue(m.title.none { it.isDigit() } && !m.title.contains("스트레스"))
+    }
 }

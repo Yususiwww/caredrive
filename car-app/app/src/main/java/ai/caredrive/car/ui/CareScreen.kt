@@ -5,6 +5,14 @@ import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.model.CareState
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.model.Reason
+import ai.caredrive.car.model.DataState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.alpha
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,9 +51,11 @@ private val Panel = Color(0xFF131C2E)
 private val Chip = Color(0xFF1E293B)
 private val TextMain = Color(0xFFF1F5F9)
 private val TextSub = Color(0xFF94A3B8)
+/** Old or missing watch data is dimmed, never shown as if it were current. */
+private const val StaleAlpha = 0.35f
 
 /** Break Korean lines between words (eojeol), not in the middle of a word. */
-private val Phrase = TextStyle(lineBreak = LineBreak.Paragraph.copy(wordBreak = LineBreak.WordBreak.Phrase))
+private val Phrase = TextStyle(fontFamily = AstaSans, lineBreak = LineBreak.Paragraph.copy(wordBreak = LineBreak.WordBreak.Phrase))
 
 /**
  * Text sizes (see docs/research/2026-11-11-차량-UI-레퍼런스.md): at least 30sp everywhere and
@@ -79,9 +89,16 @@ interface CareActions {
     fun dismiss()
     fun startEcgGuide()
     fun notifyGuardian()
+    /** Starts a cancellable countdown; the call is placed when it ends. */
     fun call119()
+    fun call119Now()
+    fun cancel119()
     fun setMood(mood: Mood)
 }
+
+/** Seconds a caution stays as a full card before it shrinks to one line (no buttons at L1). */
+private const val CautionShrinkMs = 8_000L
+private val Warn = Color(0xFFFB923C)
 
 @Composable
 fun CareScreen(state: CareState, actions: CareActions, forceCompact: Boolean = false, demoBar: @Composable () -> Unit = {}) {
@@ -115,8 +132,8 @@ private fun LevelBadge(level: Level, iconSize: Int, fontSize: TextUnit) {
 }
 
 @Composable
-private fun HeartRate(bpm: Int?, numberSp: TextUnit, iconWidth: Int) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun HeartRate(bpm: Int?, numberSp: TextUnit, iconWidth: Int, fresh: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.alpha(if (fresh) 1f else StaleAlpha)) {
         Text(bpm?.toString() ?: "--", color = TextMain, fontSize = numberSp, fontWeight = FontWeight.Bold, maxLines = 1)
         Spacer(Modifier.width(12.dp))
         HeartbeatIcon(Color(0xFFF43F5E), Modifier.width(iconWidth.dp).height((iconWidth * 0.55f).dp))
@@ -130,12 +147,16 @@ private fun CompactStatus(state: CareState) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             LevelBadge(state.level, 52, 44.sp)
             Spacer(Modifier.weight(1f))
-            HeartRate(state.heartRate, 72.sp, 72)
+            HeartRate(state.heartRate, 72.sp, 72, state.data == DataState.LIVE)
         }
         val line = listOfNotNull(Messages.breakLine(state), state.glucose?.let { "혈당 $it" }).joinToString(" · ")
         if (line.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(line, color = TextMain, fontSize = DrivingSp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Messages.dataLine(state)?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = Warn, fontSize = DrivingSp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
@@ -156,13 +177,16 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
             Spacer(Modifier.height(36.dp))
             LevelBadge(state.level, 60, 52.sp)
             Spacer(Modifier.height(24.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
+            Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.alpha(if (state.data == DataState.LIVE) 1f else StaleAlpha)) {
                 Text(state.heartRate?.toString() ?: "--", color = TextMain, fontSize = 120.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.padding(bottom = 24.dp)) {
                     HeartbeatIcon(Color(0xFFF43F5E), Modifier.width(96.dp).height(52.dp))
                     Text("bpm", color = TextSub, fontSize = DrivingSp)
                 }
+            }
+            Messages.dataLine(state)?.let {
+                Text(it, color = Warn, fontSize = DrivingSp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
             state.glucose?.let {
                 Text("혈당 $it", color = if (it < 70) Color(0xFFFB923C) else TextMain, fontSize = DrivingSp, fontWeight = FontWeight.Bold)
@@ -210,6 +234,14 @@ private fun StatusPanel(state: CareState, modifier: Modifier) {
 private fun MainCard(state: CareState, actions: CareActions, compact: Boolean) {
     val msg = Messages.forState(state)
     val color = levelColor(state.level)
+    state.emergencyCountdown?.let { left ->
+        // Confirm first, cancel second (Pleos system popup order); at most two buttons.
+        MessageCard(Level.L3_STOPPED, Messages.emergency(left), compact) {
+            BigButton("지금 전화", Color(0xFF7F1D1D), Modifier.weight(1f), actions::call119Now)
+            BigButton("취소", Color(0xFF334155), Modifier.weight(1f), actions::cancel119)
+        }
+        return
+    }
     when (state.level) {
         Level.L0_NORMAL -> PlainView(msg, if (state.parked && state.drivingMin == 0) state.readiness?.grade?.let(::gradeColor) else null, compact, !state.parked) {
             if (state.parked && state.drivingMin == 0) {
@@ -225,9 +257,15 @@ private fun MainCard(state: CareState, actions: CareActions, compact: Boolean) {
                 )
             }
         }
-        Level.L1_CAUTION -> MessageCard(state.level, msg, compact) {}
+        Level.L1_CAUTION -> {
+            // Caution is information only: full card for a few seconds, then one quiet line.
+            var shrunk by remember(state.reason) { mutableStateOf(false) }
+            LaunchedEffect(state.reason) { delay(CautionShrinkMs); shrunk = true }
+            if (shrunk) CautionLine(msg, compact) else MessageCard(state.level, msg, compact) {}
+        }
+        // Navigation owns the route once accepted; our map was only a preview.
         Level.L2_WARNING -> if (state.guidingToRest) {
-            MessageCard(state.level, Messages.guiding.copy(note = state.lastEvent), compact, map = { RestMapBlock(state, compact) }) {}
+            MessageCard(state.level, Messages.guiding.copy(note = state.lastEvent), compact) {}
         } else {
             MessageCard(state.level, msg, compact, map = { RestMapBlock(state, compact) }) {
                 BigButton("휴게소 안내", color, Modifier.weight(1f), actions::acceptRestStop)
@@ -243,6 +281,20 @@ private fun MainCard(state: CareState, actions: CareActions, compact: Boolean) {
             BigButton("보호자 알림", Color(0xFF334155), Modifier.weight(1f), actions::notifyGuardian)
             BigButton("119 전화", Color(0xFF7F1D1D), Modifier.weight(1f), actions::call119)
         }
+    }
+}
+
+/** Shrunk caution: level shape, title and the short advice, no card and no buttons. */
+@Composable
+private fun CautionLine(msg: Message, compact: Boolean) {
+    Column(Modifier.fillMaxSize().padding(start = if (compact) 8.dp else 24.dp), verticalArrangement = Arrangement.Center) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LevelIcon(Level.L1_CAUTION, levelColor(Level.L1_CAUTION), Modifier.size(56.dp))
+            Spacer(Modifier.width(20.dp))
+            Text(msg.title, color = TextMain, fontSize = if (compact) 48.sp else 56.sp, fontWeight = FontWeight.Bold, lineHeight = if (compact) 60.sp else 68.sp, style = Phrase)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(msg.body, color = TextSub, fontSize = DrivingSp, lineHeight = 50.sp, style = Phrase, modifier = Modifier.padding(start = 76.dp))
     }
 }
 

@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 fun DemoBar(status: String?, onPreset: (String) -> Unit) {
     val presets = listOf(
         "출발 전" to "predrive", "주행" to "drive", "휴식 시간" to "break", "긴장" to "tense", "스트레스" to "stress",
-        "저혈당" to "glucose", "부정맥" to "ihrn", "정차" to "park", "시나리오 ▶" to "scenario",
+        "저혈당" to "glucose", "부정맥" to "ihrn", "정차" to "park", "워치 끊김" to "nodata", "시나리오 ▶" to "scenario",
     )
     Row(
         Modifier.fillMaxWidth().padding(top = 24.dp),

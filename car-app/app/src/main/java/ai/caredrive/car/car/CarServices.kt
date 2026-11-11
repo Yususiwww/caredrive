@@ -19,7 +19,10 @@ import ai.pleos.playground.vehicle.constant.area.SeatValue
 import ai.pleos.playground.vehicle.constant.control.VehicleGear
 import ai.pleos.playground.vehicle.constant.unit.TemperatureUnit
 import ai.pleos.playground.vehicle.listener.GearSelectionListener
+import ai.caredrive.car.model.Level
 import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.Log
 import java.util.Locale
 
@@ -41,6 +44,7 @@ class CarServices(
     private val tts = TextToSpeech(app, Mode.ON_DEVICE)
     private val restAreas = RestAreas(app)
 
+    private val tones = runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90) }.getOrNull()
     private var ttsReady = false
     private var location: CurrentLocationInfo? = null
     private var hasDestination = false
@@ -103,6 +107,23 @@ class CarServices(
         navi.removeListener(naviListener)
         navi.release()
         tts.release()
+        tones?.release()
+    }
+
+    /**
+     * Level sound before the spoken message, so the level is clear without looking:
+     * one beep for caution, two for warning, three after stopping. Then [then] (usually speech).
+     */
+    fun chime(level: Level, then: () -> Unit) {
+        val beeps = when (level) {
+            Level.L0_NORMAL -> 0
+            Level.L1_CAUTION -> 1
+            Level.L2_WARNING -> 2
+            Level.L3_STOPPED -> 3
+        }
+        if (tones == null || beeps == 0) { then(); return }
+        repeat(beeps) { i -> main.postDelayed({ tones.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS) }, i * BEEP_GAP_MS) }
+        main.postDelayed(then, beeps * BEEP_GAP_MS + 150)
     }
 
     private var pendingSpeech: String? = null
@@ -233,5 +254,7 @@ class CarServices(
     companion object {
         private const val TAG = "CareDrive"
         private const val COMFORT_FLOOR_C = 20f
+        private const val BEEP_MS = 160
+        private const val BEEP_GAP_MS = 280L
     }
 }

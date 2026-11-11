@@ -93,6 +93,15 @@ class RiskEngineTest {
         e.drive(0, 60)
         e.dismiss(60 * MIN)
         assertEquals(Level.L0_NORMAL, e.drive(61, 10).level)
+        // After 15 minutes the same reason alerts again.
+        assertEquals(Level.L1_CAUTION, e.drive(72, 5).level)
+    }
+
+    @Test fun dismiss_doesNotQuietOtherReasons() {
+        val e = engine(DriverCondition(restingHr = 70, sleepMinutes = 280))
+        e.drive(0, 60)
+        e.dismiss(60 * MIN)
+        assertEquals(Reason.GLUCOSE_LOW, e.drive(61, 1, LiveSignals(heartRate = 72, glucose = 60)).reason)
     }
 
     @Test fun longBreak_resetsDrivingTime() {

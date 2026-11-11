@@ -166,6 +166,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         const val CAUTION_ESCALATE_MIN = 15
         const val OVERDUE_MIN = 30
         const val BREAK_RESET_MIN = 10
-        const val SNOOZE_MS = 30 * MIN
+        /** "괜찮아" quiets the same reason for 15 minutes (Mercedes 15, Hyundai 10). Other reasons still alert. */
+        const val SNOOZE_MS = 15 * MIN
     }
 }

@@ -6,6 +6,8 @@
         android:required="true" />
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- L2/L3 shown over other apps (navigation in front) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Pleos: HVAC read/control, gear (drive), navigation route/waypoint, TTS -->
     <uses-permission android:name="pleos.car.permission.CAR_CLIMATE" />
     <uses-permission android:name="pleos.car.permission.CONTROL_CAR_CLIMATE" />

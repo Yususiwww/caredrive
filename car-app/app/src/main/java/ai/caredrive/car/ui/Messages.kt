@@ -3,6 +3,7 @@ package ai.caredrive.car.ui
 import ai.caredrive.car.engine.Grade
 import ai.caredrive.car.engine.Mood
 import ai.caredrive.car.model.CareState
+import ai.caredrive.car.model.DataState
 import ai.caredrive.car.model.Level
 import ai.caredrive.car.model.Reason
 
@@ -78,7 +79,8 @@ object Messages {
             listOfNotNull("운전 ${s.drivingMin}분째", s.readiness?.factors?.firstOrNull()?.label).joinToString(" · "),
             spoken = true,
         )
-        Reason.STRESS_HIGH -> Message("스트레스가 높아 보여요", "4초 들이쉬고 6초 내쉬어 보세요", "실내를 시원하게 맞춰요", spoken = true)
+        // A suggestion, not a score (Mercedes Energizing Coach): the car cools the cabin and guides breathing.
+        Reason.STRESS_HIGH -> Message("잠깐 편안하게 해 드릴게요", "4초 들이쉬고 6초 내쉬어 보세요", "실내를 시원하게 맞춰요", spoken = true)
         else -> Message("조금 긴장하신 것 같아요", "천천히 숨을 쉬어 보세요", "심박이 평소보다 높아요 · 실내를 시원하게 맞춰요", spoken = true)
     }
 
@@ -88,27 +90,38 @@ object Messages {
             Reason.IHRN_NEW -> "심장 리듬 알림이 왔어요"
             Reason.HR_LOW -> "심박이 많이 낮아요"
             Reason.HR_HIGH, Reason.HR_SUSTAINED -> "심박이 계속 높아요"
-            Reason.STRESS_HIGH -> "스트레스가 계속 높아요"
+            Reason.STRESS_HIGH -> "잠깐 쉬어 가면 좋겠어요"
             Reason.GLUCOSE_LOW -> "혈당이 낮아요"
             else -> "휴식이 필요해요"
         }
         val note = when (s.reason) {
             Reason.GLUCOSE_LOW -> "휴게소에서 당을 보충하세요"
             Reason.BREAK_DUE, Reason.BREAK_OVERDUE -> "운전 ${s.drivingMin}분째"
-            else -> "\"응\" 또는 \"괜찮아\"로 답해도 돼요"
+            // CareDrive never controls the car: say so where stopping matters.
+            else -> "차는 직접 안전한 곳에 세워 주세요"
         }
         return Message(title, ask, note, spoken = true)
     }
 
+    /** After stopping: what to do now, as plain instructions. */
     private fun stopped(s: CareState) = when (s.reason) {
         Reason.IHRN_NEW -> Message(
-            "잠시 쉬어 가세요", "워치로 심전도를 재 보세요",
-            "케어드라이브는 진단하지 않아요. 증상이 있으면 의료진과 상의하세요.", spoken = true,
+            "운전을 잠시 쉬어 주세요", "워치로 심전도를 재 주세요",
+            "케어드라이브는 진단하지 않아요. 가슴이 아프거나 숨이 차면 119를 누르세요.", spoken = true,
         )
         Reason.GLUCOSE_LOW -> Message(
-            "당을 보충하고 쉬어 가세요", "혈당이 오를 때까지 기다려 주세요",
-            "어지럽거나 식은땀이 나면 주변에 도움을 요청하세요.", spoken = true,
+            "당을 먼저 보충해 주세요", "15분 쉬고 혈당을 다시 보세요",
+            "어지럽거나 식은땀이 나면 119를 누르세요.", spoken = true,
         )
-        else -> Message("잘 멈추셨어요", "스트레칭하고 물을 마셔 보세요", "10분 쉬면 휴식 시간이 다시 계산돼요.", spoken = true)
+        else -> Message("10분 쉬고 출발해 주세요", "스트레칭하고 물을 마셔 주세요", "10분 쉬면 휴식 시간이 다시 계산돼요.", spoken = true)
+    }
+
+    /** 119 call pending: the driver can still cancel (eCall pattern). */
+    fun emergency(secondsLeft: Int) = Message("${secondsLeft}초 뒤 119에 전화해요", "원하지 않으면 취소를 누르세요", spoken = true)
+
+    fun dataLine(state: CareState): String? = when (state.data) {
+        DataState.LIVE -> null
+        DataState.STALE -> "워치 데이터 안 들어옴"
+        DataState.OFF -> "워치 데이터 끊김"
     }
 }

@@ -1,8 +1,36 @@
-# 케어드라이브 (가칭)
+# 케어드라이브 (CareDrive)
 
 갤럭시 워치가 아는 운전자 컨디션(수면·에너지 점수·심박·부정맥 알림·혈당)을 Pleos 차량 앱으로 연결해, 출발 전 휴식 간격을 정하고 운전 중 이상 징후가 보이면 휴식을 제안하는 앱. 현대자동차그룹 차량용 앱 개발 공모전(Pleos) 출품작.
 
 > 케어드라이브는 진단하지 않습니다. 삼성 헬스 모니터가 보낸 알림과 일반 심박 정보를 바탕으로 "쉬어 가세요"를 안내합니다.
+
+## 공모전 제출 정보
+
+| 항목 | 내용 |
+|---|---|
+| 앱 이름 | **케어드라이브 (CareDrive)** |
+| 한 줄 소개 | 갤럭시 워치가 아는 운전자 컨디션으로 출발 전 휴식 간격을 정하고, 운전 중 이상 징후가 보이면 차가 먼저 쉬어 가자고 말하는 Pleos 앱 |
+| 팀 | Twelveone |
+| APK | [`apk/Twelveone_CareDrive_release.apk`](apk/Twelveone_CareDrive_release.apk) (release, 로컬 디버그 키로 서명, x86_64 · arm64-v8a) |
+| 개발 에뮬레이터 | Pleos Connect Emulator 2.1.0 (API 34, AVD `Pleos_Connect`), Android Emulator 37.2.12 |
+| 화면 규격 | 2560×1440 가로 화면. 앱은 오른쪽 앱 영역(넓은 창)과 반으로 나뉜 좁은 창 모두 지원 |
+| 언어·도구 | Kotlin 2.4 · Jetpack Compose · AGP 9.4 · compileSdk 37 / targetSdk 34 / minSdk 28, 중계 서버 Node.js 22 |
+
+### 빠른 실행
+
+```bash
+# 1) Pleos Connect 에뮬레이터 실행 후 APK 설치
+adb install -r -g apk/Twelveone_CareDrive_release.apk
+adb shell am start -n ai.caredrive.car/.MainActivity
+
+# 2) (선택) 폰 시뮬레이터와 연결해 실시간 데이터로 시연
+cd relay && npm install && npm start      # 맥에서 http://localhost:8787/ 열기
+```
+
+- 중계 서버 주소는 에뮬레이터 기준 `ws://10.0.2.2:8787/car`로 고정되어 있다. 중계 서버 없이 실행하면 "폰 연결 안 됨"으로 표시되고 화면은 정상 동작한다.
+- 시연용 상황 버튼(출발 전·주행·저혈당·부정맥 등)은 디버그 빌드에만 있다: `cd car-app && ./gradlew :app:installDebug`
+- 공조 제어를 보려면 에뮬레이터 Virtual Console에서 공조 값을 한 번 publish해야 한다(아래 "에뮬레이터 주의" 참고).
+- 테스트: `cd car-app && ./gradlew :app:testDebugUnitTest`, `cd relay && npm test`
 
 ## 구성
 

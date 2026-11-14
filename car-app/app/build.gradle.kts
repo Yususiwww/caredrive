@@ -16,6 +16,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        // Pleos Connect emulator is x86_64, the car is arm64: ship only those (keeps the APK under GitHub's limit).
+        ndk { abiFilters += listOf("x86_64", "arm64-v8a") }
         // Relay server on the Mac, as seen from the Pleos emulator. See relay/server.js.
         buildConfigField("String", "RELAY_URL", "\"ws://10.0.2.2:8787/car\"")
     }
@@ -23,6 +25,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Contest build: signed with the local debug key so the APK installs as-is on the emulator.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

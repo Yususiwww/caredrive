@@ -202,9 +202,9 @@ for i, e in enumerate(tl.get("events", [])):
 #   Gymnopédie No. 1 (Satie) — CC0;  Canon in D (Pachelbel), performed by Kevin MacLeod — CC BY 3.0.
 # If they are missing, demo/music.py synthesizes the same pieces from the notes.
 MUSIC_DIR = ROOT / "docs/demo/music"
-RECORDINGS = [(MUSIC_DIR / "gymnopedie_cc0.ogg", 13.0, "♪ 내 플레이리스트 1 · 사티 〈짐노페디 1번〉"),
-              (MUSIC_DIR / "canon_macleod_ccby.ogg", 0.0, "♪ 내 플레이리스트 2 · 파헬벨 〈캐논〉")]
-MUSIC_CREDIT = "음악: Satie 〈Gymnopédie No.1〉 (CC0, Wikimedia Commons) · Pachelbel 〈Canon in D〉 Kevin MacLeod (incompetech.com), CC BY 3.0"
+RECORDINGS = [(MUSIC_DIR / "gymnopedie_cc0.ogg", 13.0, "♪ 내 플레이리스트 1 · 사티 - 짐노페디 1번"),
+              (MUSIC_DIR / "canon_macleod_ccby.ogg", 0.0, "♪ 내 플레이리스트 2 · 파헬벨 - 캐논")]
+MUSIC_CREDIT = "음악: Satie - Gymnopedie No.1 (CC0, Wikimedia Commons) · Pachelbel - Canon in D, Kevin MacLeod (incompetech.com), CC BY 3.0"
 music = []
 play = next((s_ for s_ in tl["speaks"] if "노래" in s_["text"]), None)
 if play:
@@ -312,25 +312,26 @@ def card(path, draw_fn):
 
 def intro(d, img):
     d.text((160, 120), "Twelveone", font=font(30, 700), fill=BLUE)
-    d.text((160, 250), "워치가 먼저 알아챘다면,", font=font(46, 600), fill=SUB)
+    d.text((160, 250), "쓰러지기 전에 세우고, 대답이 없으면 알린다.", font=font(46, 600), fill=SUB)
     d.text((152, 330), "케어드라이브", font=font(150, 800), fill=INK)
-    d.text((160, 530), "워치가 아는 내 컨디션, 차가 먼저 챙겨요", font=font(54, 700), fill=SUB)
+    d.text((160, 530), "차의 운전 신호에, 워치의 몸 신호를 더해요", font=font(54, 700), fill=SUB)
     d.text((160, 860), "Pleos Connect 에뮬레이터 2.1.0의 화면과 소리를 그대로 녹화했어요", font=font(28, 500), fill=MUTE)
     d.text((160, 902), "건강 데이터(수면·심박·부정맥 알림)는 폰 시뮬레이터로 넣은 시험 값이에요", font=font(28, 500), fill=MUTE)
 
 
 def outro(d, img):
     d.text((152, 150), "케어드라이브", font=font(96, 800), fill=INK)
-    rows = [("출발 전", "워치의 수면·에너지로 오늘의 휴식 간격을 정해요"),
-            ("운전 중", "심박이 오르거나 알림이 오면 먼저 쉬어 가자고 말해요"),
-            ("멈추면", "이유에 맞는 다음 행동과 보호자 알림, 119를 안내해요")]
+    rows = [("출발 전", "수면과 기분으로 오늘의 휴식 간격을 정해요"),
+            ("운전 중", "졸음·정체·심장 이상이면 차가 먼저 물어요"),
+            ("대답 없으면", "보호자에게 전화하고 119 연결을 준비해요")]
     for i, (k, v) in enumerate(rows):
         y = 360 + i * 120
         d.rounded_rectangle((160, y, 340, y + 70), 35, fill=(25, 50, 92))
         d.text((250 - text_w(d, k, font(32, 700)) / 2, y + 14), k, font=font(32, 700), fill=BLUE)
         d.text((380, y + 10), v, font=font(44, 700), fill=INK)
-    d.text((160, 790), "케어드라이브는 진단하지 않아요. 위급하면 119가 먼저예요.", font=font(30, 600), fill=SUB)
-    d.text((160, 900), "github.com/Yususiwww/caredrive  ·  Twelveone", font=font(30, 600), fill=MUTE)
+    d.text((160, 740), "워치 없이도: 졸음 · 정체 무응답 · 휴식 안내는 차 신호만으로 동작해요", font=font(32, 700), fill=BLUE)
+    d.text((160, 800), "케어드라이브는 진단하지 않아요. 위급하면 119가 먼저예요.", font=font(30, 600), fill=SUB)
+    d.text((160, 900), "Twelveone", font=font(30, 600), fill=MUTE)
     if music:
         d.text((160, 990), MUSIC_CREDIT, font=font(20, 500), fill=MUTE)
 
@@ -402,7 +403,7 @@ parts += [(OUT / "outro.mp4", OUTRO)]
 VOICE = os.environ.get("NARRATOR_VOICE", "ko-KR-InJoonNeural")
 VOICE_ARGS = os.environ.get("NARRATOR_ARGS", "--rate=-8% --pitch=-4Hz").split()  # picked by the team: sample A
 NARRATION_OPENING = "운전 중 몸에 이상이 오면, 스스로 도움을 청하기 어렵습니다. 쓰러지기 전에 세우게 하고, 대답이 없으면 대신 알립니다."
-NARRATION_INTRO = "케어드라이브는 워치의 몸 상태와 차의 운전 상태를 함께 봅니다."
+NARRATION_INTRO = "케어드라이브는 차의 운전 상태를 기본으로, 워치가 있으면 몸 상태까지 함께 봅니다."
 NARRATION_EMERGENCY = "위급한 순간, 차가 보낸 신호는 가족에게 먼저 닿습니다."
 NARRATION_CHAPTERS = [
     "출발 전, 지난밤 수면으로 오늘의 휴식 간격을 정합니다.",

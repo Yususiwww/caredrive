@@ -19,9 +19,9 @@ OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/caredrive-demo")
 ROOT = Path(__file__).resolve().parents[2]
 ASTA = ROOT / "car-app/app/src/main/res/font/asta_sans.ttf"
 W, H, FPS = 1920, 1080, 30
-CAR = (64, 184, 1376, 774)            # x, y, w, h
-PHONE_H = 774
-PHONE = (W - 64 - round(PHONE_H * 860 / 1864), 184)
+CAR = (40, 176, 1472, 828)            # x, y, w, h
+PHONE_H = 828
+PHONE = (W - 40 - round(PHONE_H * 860 / 1864), 176)
 INTRO, OUTRO, XF = 4.0, 5.5, 0.6     # seconds; XF = crossfade
 
 # Dark cockpit palette, matching the app's design D.
@@ -41,7 +41,7 @@ CHAPTERS = [
     ("심장 이상 · 비상등 · 정차 · 연락",
      "넣은 값: 부정맥 알림 (시뮬레이션)  ·  '도움이 필요해요' → 실내 조명 빨강 · 정차(P)하면 보호자 전화 · 119 연결 준비"),
     ("맥박 없음 · 3분 안에 대답이 없으면",
-     "시연을 위해 3분 타이머를 10배 빠르게 돌렸어요  ·  1분: 보호자 미리 알림  ·  3분: 보호자 전화 · 119 다이얼러 준비"),
+     "시연을 위해 3분 타이머를 10배 빠르게 돌렸어요  ·  30초(핸들·브레이크 입력 없음): 보호자 미리 알림  ·  3분: 보호자 전화 · 119 다이얼러 준비"),
 ]
 
 
@@ -173,6 +173,42 @@ for i, s in enumerate(speaks):
     p, w, h = speech_img(i, s["text"])
     caps.append((p, max(0, (s["t"] - t0) / 1000), (end - t0) / 1000, (W - w) // 2, H - h - 22))
 
+def event_img(i, text):
+    f = font(26, 700)
+    tmp = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    w, h = int(text_w(tmp, text, f) + 64), 52
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), h // 2, fill=(49, 130, 246, 235))
+    d.ellipse((18, h // 2 - 6, 30, h // 2 + 6), fill=(255, 255, 255))
+    d.text((40, 9), text, font=f, fill=(255, 255, 255))
+    p = OUT / f"cap_ev{i}.png"
+    img.save(p)
+    return p, w
+
+
+# Car actions worth pointing at (navigation waypoint, ambient light), shown as a chip on the car frame.
+for i, e in enumerate(tl.get("events", [])):
+    p, w = event_img(i, e["label"])
+    a = max(0, (e["t"] - t0) / 1000)
+    caps.append((p, a, a + 4.5, CAR[0] + CAR[2] - w - 24, CAR[1] + 24))
+
+# Playlist scene: when the car says it will play music, play two public-domain pieces (synthesized
+# from the notes by demo/music.py) for ~10 s each, quietly under the car's own voice.
+music = []
+play = next((s_ for s_ in tl["speaks"] if "노래" in s_["text"]), None)
+if play:
+    subprocess.run([sys.executable, str(Path(__file__).parent / "music.py"), str(OUT)], check=True,
+                   capture_output=True)
+    m0 = (play["t"] - t0) / 1000 + 3.2
+    for k, (wav, label) in enumerate((("gymnopedie.wav", "♪ 내 플레이리스트 1 · 사티 〈짐노페디 1번〉"),
+                                      ("canon.wav", "♪ 내 플레이리스트 2 · 파헬벨 〈캐논〉"))):
+        start = m0 + 10.0 * k
+        if start < dur - 2:
+            music.append((OUT / wav, start))
+            p_, w_ = event_img(100 + k, label)
+            caps.append((p_, start, min(dur, start + 9.5), CAR[0] + 24, CAR[1] + CAR[3] - 52 - 24))
+
 inputs = ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "bg.png"),
           "-i", str(OUT / "car.mkv"),
           "-f", "concat", "-safe", "0", "-i", str(OUT / "phone.txt"),
@@ -181,6 +217,8 @@ inputs = ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "bg.png"),
           "-i", str(AUDIO)]
 for p, *_ in caps:
     inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(p)]
+for wav, _ in music:
+    inputs += ["-i", str(wav)]
 base = 6
 
 flt = [f"[1:v]trim=start={lead_v:.3f},setpts=PTS-STARTPTS,scale={CAR[2]}:{CAR[3]},format=rgba[c0]",
@@ -198,7 +236,20 @@ for i, (p, a, b, x, y) in enumerate(caps):
     flt.append(f"[{last}][c{i}]overlay={x}:{y}:enable='between(t,{a:.2f},{b:.2f})'[w{i}]")
     last = f"w{i}"
 flt.append(f"[{last}]fps={FPS},format=yuv420p[vout]")
-flt.append(f"[5:a]atrim=start={lead_a:.3f},asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},aresample=48000,aformat=channel_layouts=stereo[aout]")
+car_a = (f"[5:a]atrim=start={lead_a:.3f},asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},aresample=48000,"
+         f"aformat=channel_layouts=stereo")
+if music:
+    flt.append(car_a + "[acar]")
+    mix = ["[acar]"]
+    for k, (wav, start) in enumerate(music):
+        idx = base + len(caps) + k
+        ms = int(start * 1000)
+        flt.append(f"[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:10,"
+                   f"afade=t=in:d=0.8,afade=t=out:st=8.8:d=1.2,volume=0.32,adelay={ms}|{ms}[m{k}]")
+        mix.append(f"[m{k}]")
+    flt.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[aout]")
+else:
+    flt.append(car_a + "[aout]")
 (OUT / "filter_main.txt").write_text(";\n".join(flt))
 subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                 "-/filter_complex", str(OUT / "filter_main.txt"), "-map", "[vout]", "-map", "[aout]",

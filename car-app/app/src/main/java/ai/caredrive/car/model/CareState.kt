@@ -19,7 +19,39 @@ enum class Reason {
     /** Driven as long as today's break interval (drowsiness risk). */
     BREAK_DUE,
     BREAK_OVERDUE,
+    /** Watch on the wrist but no pulse detected. Highest urgency. */
+    NO_PULSE,
+    /** Drowsiness score (sleep debt, time driven, time of day, HR drop, steering) above the limit. */
+    DROWSY,
 }
+
+/** A question the car is asking aloud and on screen, waiting for the driver's answer. */
+enum class Ask {
+    /** "심장 박동이 평소와 달라요. 괜찮으세요?" → [도움이 필요해요] [괜찮아요] */
+    CARDIAC_CHECK,
+    /** "괜찮으세요? 대답해 주세요." → [괜찮아요]; 60 s pre-alert, 180 s call */
+    NO_PULSE,
+    /** "많이 긴장하신 것 같아요. 힘든 일이 있었나요?" → [좀 그래요] [괜찮아요] */
+    STRESS_TALK,
+    /** "졸음이 올 수 있어요. 창문을 조금 열까요?" → [쉬어 갈게요] [괜찮아요] */
+    DROWSY,
+}
+
+/** Open question on screen. [secondsLeft] counts down to the next escalation (null = no timer). */
+data class Checkin(
+    val ask: Ask,
+    val startedMs: Long,
+    val secondsLeft: Int? = null,
+    /** Total seconds of the timer, for the ring gauge. */
+    val totalSeconds: Int? = null,
+    /** NO_PULSE after 60 s: contacts already got a pre-alert text. */
+    val preAlerted: Boolean = false,
+)
+
+enum class PulseState { PRESENT, ABSENT, OFF_WRIST }
+
+/** Who the phone has been asked to reach, shown as a checklist on screen. */
+data class Contacting(val contacts: Boolean, val emergency119: Boolean, val reason: Reason)
 
 /** Whether the watch data on screen is current. Shown honestly instead of silently using old numbers. */
 enum class DataState {
@@ -70,6 +102,19 @@ data class CareState(
     val data: DataState = DataState.LIVE,
     /** Seconds left before 119 is called; null when no call is pending. The driver can cancel. */
     val emergencyCountdown: Int? = null,
+    /** Question the car is waiting on, or null. */
+    val checkin: Checkin? = null,
+    val pulse: PulseState = PulseState.PRESENT,
+    /** 0–100 drowsiness score (design example), null when there is nothing to base it on. */
+    val drowsiness: Int? = null,
+    /** Hazard lights on, read from the car's turn-signal state (the app cannot switch them itself). */
+    val hazardOn: Boolean = false,
+    /** Playlist the phone is playing at the car's request, e.g. "편안한 플레이리스트". */
+    val nowPlaying: String? = null,
+    /** Set once the phone has been asked to contact people. */
+    val contacting: Contacting? = null,
+    /** Vehicle speed in km/h when the car reports it (null on cars/emulators without it). */
+    val speedKmh: Int? = null,
 ) {
     companion object { const val HR_WINDOW_MS = 30 * 60_000L }
 }

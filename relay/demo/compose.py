@@ -1,53 +1,137 @@
-"""Compose the side-by-side demo video from demo/record.mjs output.
+"""Edit the demo film from demo/record.mjs output: intro, six numbered chapters, outro, with sound.
 
 Usage: python3 demo/compose.py <outDir>   → <outDir>/caredrive-demo.mp4
-Needs ffmpeg and Pillow. Captions are rendered as images (ffmpeg here has no drawtext).
+Needs ffmpeg and Pillow. Captions are rendered as images (this ffmpeg has no drawtext).
+
+Layout (1920x1080, light studio backdrop like the app):
+  top     chapter number + title, and a second line saying what was fed in (honest about test values)
+  middle  car screen (scrcpy recording, with the car's own voice and chimes) and the phone page
+  bottom  what the car just said, as a subtitle pill
 """
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/caredrive-demo")
-FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
-W, H = 1920, 1080
-CAR_W, CAR_H, CAR_X, CAR_Y = 1440, 810, 24, 64
-PH_H, PH_X, PH_Y = 900, 1500, 64
-BG = (11, 18, 32)
+ROOT = Path(__file__).resolve().parents[2]
+ASTA = ROOT / "car-app/app/src/main/res/font/asta_sans.ttf"
+W, H, FPS = 1920, 1080, 30
+CAR = (64, 184, 1376, 774)            # x, y, w, h
+PHONE_H = 774
+PHONE = (W - 64 - round(PHONE_H * 860 / 1864), 184)
+INTRO, OUTRO, XF = 4.0, 5.5, 0.6     # seconds; XF = crossfade
 
+INK, SUB, MUTE, BLUE = (25, 31, 40), (78, 89, 104), (107, 118, 132), (49, 130, 246)
+
+# What each scenario chapter shows, and what was fed in to make it happen.
+CHAPTERS = [
+    ("출발 전 · 오늘 컨디션을 차로 보내요",
+     "넣은 값: 수면 4시간 40분 · 에너지 점수 45 (워치 시뮬레이션)  →  오늘은 1시간마다 쉬어 가요"),
+    ("주행 시작 · 운전 중엔 크게, 짧게",
+     "넣은 값: 주행 시작 (데모 버튼, 실제 차에서는 기어 신호)  ·  화면은 제목과 한 줄만"),
+    ("심박이 계속 높으면 · 실내를 시원하게",
+     "넣은 값: 심박 116 bpm 지속 (시간 10분 감기)  ·  호흡을 안내하고 공조를 시원하게 맞춰요"),
+    ("운전 1시간 · 컨디션이 낮은 날은 휴식이 빨라요",
+     "보통 2시간마다 쉬지만, 수면이 짧은 오늘은 1시간으로 앞당겼어요 (시간 1시간 감기)"),
+    ("워치의 부정맥 알림 · 가까운 졸음쉼터로",
+     "넣은 값: 삼성 헬스 불규칙 심박 알림 (시뮬레이션)  ·  '휴게소 안내'를 누르면 내비 경유지로 추가"),
+    ("정차하면 · 이유에 맞는 다음 행동",
+     "넣은 값: 정차 (데모 버튼)  ·  심전도 재기 · 보호자 알림 · 119 (10초 안에 취소할 수 있어요)"),
+]
+
+
+def font(size, weight=700):
+    f = ImageFont.truetype(str(ASTA), size)
+    try:
+        f.set_variation_by_axes([weight])
+    except Exception:
+        pass
+    return f
+
+
+def backdrop():
+    """Soft studio gradient: bright top-left falling to light grey (same as the app's light theme)."""
+    small = Image.new("RGB", (192, 108))
+    px = small.load()
+    for y in range(108):
+        for x in range(192):
+            d = (((x - 50) / 192) ** 2 + ((y - 15) / 108) ** 2) ** 0.5 / 1.05
+            t = min(1.0, d)
+            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip((255, 255, 255), (217, 222, 227)))
+    return small.resize((W, H), Image.BICUBIC)
+
+
+def shadow(img, box, radius, blur=28, alpha=60, dy=12):
+    x, y, w, h = box
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).rounded_rectangle((x, y + dy, x + w, y + h + dy), radius, fill=(0, 23, 51, alpha))
+    img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(blur)))
+
+
+def mask(path, w, h, r):
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).rounded_rectangle((0, 0, w - 1, h - 1), r, fill=255)
+    m.save(path)
+
+
+def text_w(d, s, f):
+    return d.textlength(s, font=f)
+
+
+# ---------------------------------------------------------------------------------------------
 tl = json.loads((OUT / "timeline.json").read_text())
 t0 = tl["carStart"]
 dur = (tl["carEnd"] - t0) / 1000
+pw = round(PHONE_H * 860 / 1864)
+
+# Main background with soft shadows under both screens and the two small source labels.
+bg = backdrop().convert("RGBA")
+shadow(bg, CAR, 22)
+shadow(bg, (*PHONE, pw, PHONE_H), 40)
+d = ImageDraw.Draw(bg)
+for i, line in enumerate(("Twelveone · 케어드라이브", "Pleos Connect 에뮬레이터 2.1.0 화면·소리 그대로 + 폰 시뮬레이터")):
+    f = font(20, 600 if i == 0 else 500)
+    d.text((W - 64 - text_w(d, line, f), 34 + i * 28), line, font=f, fill=MUTE if i else SUB)
+bg.convert("RGB").save(OUT / "bg.png")
+mask(OUT / "mask_car.png", CAR[2], CAR[3], 22)
+mask(OUT / "mask_phone.png", pw, PHONE_H, 40)
 
 
-def font(size, bold=False):
-    # Face 0 = Regular, 6 = Bold in AppleSDGothicNeo.ttc
-    return ImageFont.truetype(FONT, size, index=6 if bold else 0)
-
-
-def caption(path, text, size, color, bold=False, width=CAR_W, height=None, icon=None):
-    f = font(size, bold)
-    h = height or size + 28
-    img = Image.new("RGBA", (width, h), (0, 0, 0, 0))
+def chapter_img(i, title, detail):
+    img = Image.new("RGBA", (W - 128, 132), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    x = 0
-    if icon:
-        d.rounded_rectangle((0, 4, size * 2 + 10, h - 4), radius=10, fill=(15, 118, 110, 255))
-        d.text((10, (h - size) // 2 - 4), icon, font=font(size - 6, True), fill=(255, 255, 255))
-        x = size * 2 + 26
-    d.text((x, (h - size) // 2 - 4), text, font=f, fill=color)
-    img.save(path)
+    d.ellipse((0, 4, 60, 64), fill=BLUE)
+    n = f"{i + 1:02d}"
+    fn = font(28, 800)
+    d.text((30 - text_w(d, n, fn) / 2, 15), n, font=fn, fill=(255, 255, 255))
+    d.text((80, 0), title, font=font(50, 800), fill=INK)
+    d.text((82, 84), detail, font=font(27, 500), fill=SUB)
+    p = OUT / f"cap_ch{i}.png"
+    img.save(p)
+    return p
 
 
-# Static frame: titles and labels.
-frame = Image.new("RGB", (W, H), BG)
-d = ImageDraw.Draw(frame)
-d.text((CAR_X, 18), "차 화면 · Pleos Connect 에뮬레이터", font=font(28, True), fill=(203, 213, 225))
-d.text((PH_X, 18), "폰 앱 (시뮬레이터)", font=font(28, True), fill=(203, 213, 225))
-d.text((W - 300, H - 44), "시뮬레이션 데이터 · 데모", font=font(24), fill=(100, 116, 139))
-frame.save(OUT / "bg.png")
+def speech_img(i, text):
+    f = font(36, 700)
+    tmp = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    tw = text_w(tmp, text, f)
+    w, h = int(tw + 140), 76
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), h // 2, fill=(25, 31, 40, 235))
+    # Small speaker glyph: the car is speaking these exact words.
+    cx, cy = 42, h // 2
+    d.polygon([(cx - 14, cy - 7), (cx - 6, cy - 7), (cx + 4, cy - 15), (cx + 4, cy + 15), (cx - 6, cy + 7), (cx - 14, cy + 7)],
+              fill=(144, 194, 255))
+    d.arc((cx - 2, cy - 12, cx + 18, cy + 12), -50, 50, fill=(144, 194, 255), width=3)
+    d.text((84, 14), text, font=f, fill=(255, 255, 255))
+    p = OUT / f"cap_sp{i}.png"
+    img.save(p)
+    return p, w, h
+
 
 # Phone frames → variable-frame-rate video aligned to the car start time.
 frames = [f for f in tl["frames"] if f["t"] >= t0 - 5000]
@@ -61,42 +145,99 @@ for i, f in enumerate(frames):
 lines.append(f"file 'frames/{frames[-1]['file']}'")
 (OUT / "phone.txt").write_text("\n".join(lines) + "\n")
 
-# Captions: chapters (until next chapter) and car speech (until next speech, max 7 s).
-caps = []
-chapters = tl["chapters"]
-for i, c in enumerate(chapters):
-    end = chapters[i + 1]["t"] if i + 1 < len(chapters) else tl["carEnd"]
-    p = OUT / f"cap_ch{i}.png"
-    caption(p, c["label"], 40, (241, 245, 249), bold=True)
-    caps.append((p, (c["t"] - t0) / 1000, (end - t0) / 1000, CAR_X, 892))
+caps = []  # (path, start, end, x, y)
+chs = tl["chapters"]
+for i, c in enumerate(chs):
+    end = chs[i + 1]["t"] if i + 1 < len(chs) else tl["carEnd"]
+    title, detail = CHAPTERS[i] if i < len(CHAPTERS) else (c["label"], "")
+    caps.append((chapter_img(i, title, detail), max(0, (c["t"] - t0) / 1000 - 0.3), (end - t0) / 1000, 64, 36))
 speaks = [s for s in tl["speaks"] if s["t"] >= t0 - 1000]
 for i, s in enumerate(speaks):
     nxt = speaks[i + 1]["t"] if i + 1 < len(speaks) else tl["carEnd"]
-    end = min(nxt, s["t"] + 7000)
-    p = OUT / f"cap_sp{i}.png"
-    caption(p, f"“{s['text']}”", 32, (153, 246, 228), icon="음성", height=56)
-    caps.append((p, max(0, (s["t"] - t0) / 1000), (end - t0) / 1000, CAR_X, 966))
+    end = min(nxt - 200, s["t"] + 6500)
+    p, w, h = speech_img(i, s["text"])
+    caps.append((p, max(0, (s["t"] - t0) / 1000), (end - t0) / 1000, (W - w) // 2, H - h - 22))
 
 inputs = ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "bg.png"),
-          "-i", str(OUT / "car.mp4"),
-          "-f", "concat", "-safe", "0", "-i", str(OUT / "phone.txt")]
+          "-i", str(OUT / "car.mkv"),
+          "-f", "concat", "-safe", "0", "-i", str(OUT / "phone.txt"),
+          "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "mask_car.png"),
+          "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "mask_phone.png")]
 for p, *_ in caps:
     inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(p)]
+base = 5
 
-flt = [f"[1:v]scale={CAR_W}:{CAR_H},setpts=PTS-STARTPTS[car]",
-       f"[2:v]scale=-2:{PH_H},setpts=PTS-STARTPTS[ph]",
-       "[0:v][car]overlay=%d:%d:shortest=0[v0]" % (CAR_X, CAR_Y),
-       "[v0][ph]overlay=%d:%d:eof_action=repeat[v1]" % (PH_X, PH_Y)]
+flt = [f"[1:v]scale={CAR[2]}:{CAR[3]},setpts=PTS-STARTPTS,format=rgba[c0]",
+       "[3:v]format=gray[mc]", "[c0][mc]alphamerge[car]",
+       f"[2:v]scale={pw}:{PHONE_H},setpts=PTS-STARTPTS,format=rgba[p0]",
+       "[4:v]format=gray[mp]", "[p0][mp]alphamerge[ph]",
+       f"[0:v][car]overlay={CAR[0]}:{CAR[1]}:shortest=0[v0]",
+       f"[v0][ph]overlay={PHONE[0]}:{PHONE[1]}:eof_action=repeat[v1]"]
 last = "v1"
 for i, (p, a, b, x, y) in enumerate(caps):
-    nxt = f"v{i + 2}"
-    flt.append(f"[{last}][{i + 3}:v]overlay={x}:{y}:enable='between(t,{a:.2f},{b:.2f})'[{nxt}]")
-    last = nxt
-(OUT / "filter.txt").write_text(";\n".join(flt))
+    k = base + i
+    fade = (f"[{k}:v]format=rgba,fade=t=in:st={a:.2f}:d=0.35:alpha=1,"
+            f"fade=t=out:st={max(a, b - 0.35):.2f}:d=0.35:alpha=1[c{i}]")
+    flt.append(fade)
+    flt.append(f"[{last}][c{i}]overlay={x}:{y}:enable='between(t,{a:.2f},{b:.2f})'[w{i}]")
+    last = f"w{i}"
+flt.append(f"[{last}]fps={FPS},format=yuv420p[vout]")
+flt.append(f"[1:a]asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},aresample=48000[aout]")
+(OUT / "filter_main.txt").write_text(";\n".join(flt))
+subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
+                "-/filter_complex", str(OUT / "filter_main.txt"), "-map", "[vout]", "-map", "[aout]",
+                "-t", f"{dur:.2f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+                "-c:a", "aac", "-b:a", "192k", str(OUT / "main.mp4")], check=True)
 
-cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
-       "-/filter_complex", str(OUT / "filter.txt"), "-map", f"[{last}]",
-       "-t", f"{dur:.2f}", "-r", "30", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20",
-       str(OUT / "caredrive-demo.mp4")]
-subprocess.run(cmd, check=True, cwd=OUT)
-print(OUT / "caredrive-demo.mp4", f"{dur:.1f}s", f"{len(caps)} captions")
+
+# ---------------------------------------------------------------------------------------------
+def card(path, draw_fn):
+    img = backdrop().convert("RGBA")
+    draw_fn(ImageDraw.Draw(img), img)
+    img.convert("RGB").save(path)
+
+
+def intro(d, img):
+    d.text((160, 120), "Twelveone", font=font(30, 700), fill=BLUE)
+    d.text((152, 330), "케어드라이브", font=font(150, 800), fill=INK)
+    d.text((160, 530), "워치가 아는 내 컨디션, 차가 먼저 챙겨요", font=font(54, 700), fill=SUB)
+    d.text((160, 860), "Pleos Connect 에뮬레이터 2.1.0의 화면과 소리를 그대로 녹화했어요", font=font(28, 500), fill=MUTE)
+    d.text((160, 902), "건강 데이터(수면·심박·부정맥 알림)는 폰 시뮬레이터로 넣은 시험 값이에요", font=font(28, 500), fill=MUTE)
+
+
+def outro(d, img):
+    d.text((152, 150), "케어드라이브", font=font(96, 800), fill=INK)
+    rows = [("출발 전", "워치의 수면·에너지로 오늘의 휴식 간격을 정해요"),
+            ("운전 중", "심박이 오르거나 알림이 오면 먼저 쉬어 가자고 말해요"),
+            ("멈추면", "이유에 맞는 다음 행동과 보호자 알림, 119를 안내해요")]
+    for i, (k, v) in enumerate(rows):
+        y = 360 + i * 120
+        d.rounded_rectangle((160, y, 340, y + 70), 35, fill=(232, 243, 255))
+        d.text((250 - text_w(d, k, font(32, 700)) / 2, y + 14), k, font=font(32, 700), fill=BLUE)
+        d.text((380, y + 10), v, font=font(44, 700), fill=INK)
+    d.text((160, 790), "케어드라이브는 진단하지 않아요. 위급하면 119가 먼저예요.", font=font(30, 600), fill=SUB)
+    d.text((160, 900), "github.com/Yususiwww/caredrive  ·  Twelveone", font=font(30, 600), fill=MUTE)
+
+
+card(OUT / "intro.png", intro)
+card(OUT / "outro.png", outro)
+for name, secs in (("intro", INTRO), ("outro", OUTRO)):
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-loop", "1", "-t", f"{secs}", "-i", str(OUT / f"{name}.png"),
+                    "-f", "lavfi", "-t", f"{secs}", "-i", "anullsrc=r=48000:cl=stereo",
+                    "-vf", f"fps={FPS},format=yuv420p", "-c:v", "libx264", "-crf", "18",
+                    "-c:a", "aac", "-shortest", str(OUT / f"{name}.mp4")], check=True)
+
+# Crossfade intro → main → outro.
+o1 = INTRO - XF
+o2 = o1 + dur - XF
+xf = (f"[0:v][1:v]xfade=transition=fade:duration={XF}:offset={o1:.2f}[x1];"
+      f"[x1][2:v]xfade=transition=fade:duration={XF}:offset={o2:.2f}[v];"
+      f"[0:a][1:a]acrossfade=d={XF}[a1];[a1][2:a]acrossfade=d={XF}[a]")
+subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(OUT / "intro.mp4"), "-i", str(OUT / "main.mp4"), "-i", str(OUT / "outro.mp4"),
+                "-filter_complex", xf, "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+                str(OUT / "caredrive-demo.mp4")], check=True)
+print(OUT / "caredrive-demo.mp4", f"{INTRO + dur + OUTRO - 2 * XF:.1f}s", f"{len(caps)} captions")

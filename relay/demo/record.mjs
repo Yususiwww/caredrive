@@ -1,9 +1,11 @@
-// Records a side-by-side demo: phone simulator page (headless Chrome screencast) + car screen (adb screenrecord).
+// Records a side-by-side demo: phone simulator page (headless Chrome screencast) + car screen with sound
+// (scrcpy, audio source "playback" so the car's voice and chimes are in the file; needs `brew install scrcpy`
+// and the emulator started WITH audio, i.e. without -no-audio).
 // Usage: node demo/record.mjs <outDir>     (relay server and Pleos emulator with the car app must be running)
 // Then:  python3 demo/compose.py <outDir>  → <outDir>/caredrive-demo.mp4
 
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 
@@ -54,6 +56,7 @@ cdp.on('message', (raw) => {
 const js = (expr) => call('Runtime.evaluate', { expression: expr, awaitPromise: true });
 
 await call('Emulation.setDeviceMetricsOverride', { width: 430, height: 932, deviceScaleFactor: 2, mobile: true });
+await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
 await call('Page.enable');
 await call('Page.navigate', { url: PAGE });
 await sleep(1500);
@@ -63,7 +66,7 @@ await js(`
     const el = document.getElementById(id);
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     await new Promise(r => setTimeout(r, 600));
-    el.style.transition = 'box-shadow .2s'; el.style.boxShadow = '0 0 0 6px rgba(15,118,110,.45)';
+    el.style.transition = 'box-shadow .2s'; el.style.boxShadow = '0 0 0 6px rgba(49,130,246,.45)';
     await new Promise(r => setTimeout(r, 350));
     el.click();
     setTimeout(() => { el.style.boxShadow = ''; }, 500);
@@ -89,9 +92,16 @@ await sleep(6000); // TTS init + relay connect
 adb('logcat', '-c');
 
 await call('Page.startScreencast', { format: 'jpeg', quality: 85 });
-const rec = spawn(ADB, ['shell', 'screenrecord', '--size', '1920x1080', '--bit-rate', '12000000', '--time-limit', '170', '/sdcard/cd_demo.mp4']);
-timeline.carStart = Date.now() + 400; // screenrecord needs a moment to start encoding
-await sleep(1500);
+const rec = spawn('scrcpy', [
+  '--no-window', '--no-playback', '--audio-source=playback', '--audio-dup', '--max-size=1920', '--video-bit-rate=12M',
+  `--record=${join(OUT, 'car.mkv')}`,
+], { env: { ...process.env, ADB } });
+// scrcpy buffers its log when not on a terminal, so watch the file instead: recording starts when it grows.
+for (let i = 0; i < 100 && timeline.carStart === 0; i++) {
+  await sleep(100);
+  try { if (statSync(join(OUT, 'car.mkv')).size > 0) timeline.carStart = Date.now(); } catch {}
+}
+await sleep(1000);
 
 const tapCar = (text) => {
   const xml = adb('exec-out', 'uiautomator', 'dump', '/dev/tty');
@@ -137,10 +147,8 @@ await sleep(9000);
 // --- finish --------------------------------------------------------------------------------------
 timeline.carEnd = Date.now();
 await call('Page.stopScreencast');
-adb('shell', 'pkill', '-INT', 'screenrecord');
+rec.kill('SIGINT');
 await new Promise((r) => rec.once('exit', r));
-await sleep(1500);
-adb('pull', '/sdcard/cd_demo.mp4', join(OUT, 'car.mp4'));
 
 timeline.speaks = adb('logcat', '-d', '-v', 'epoch', '-s', 'CareDrive:I')
   .split('\n')

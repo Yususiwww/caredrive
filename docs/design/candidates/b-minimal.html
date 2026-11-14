@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<title>토스 극단 미니멀</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+@font-face{font-family:"Asta Sans";src:url("../../../car-app/app/src/main/res/font/asta_sans.ttf") format("truetype");font-weight:300 800;font-display:block}
+:root{
+  color-scheme: light only;
+  --grey100:#F2F4F6;--grey200:#E5E8EB;--grey300:#D1D6DB;--grey400:#B0B8C1;--grey500:#8B95A1;
+  --grey600:#6B7684;--grey700:#4E5968;--grey800:#333D4B;--grey900:#191F28;
+  --blue:#3182F6;--red-strong:#D22030;
+  --gut:120px;   /* page edge to the level shape */
+  --col:216px;   /* page edge to the text column: the shape hangs in the gutter */
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#F2F4F6;font-family:"Asta Sans","Pretendard Variable",sans-serif;color:var(--grey900);-webkit-font-smoothing:antialiased}
+.sheet{padding:96px;display:flex;flex-direction:column;gap:40px;width:max-content}
+.sheet-head{font:700 40px/1.2 "Pretendard Variable",sans-serif;letter-spacing:-.02em;display:flex;gap:24px;align-items:baseline}
+.sheet-head span{font-weight:500;font-size:28px;color:var(--grey600)}
+.row{display:flex;gap:80px;align-items:flex-start}
+.shot{display:flex;flex-direction:column;gap:20px}
+.cap{font:600 26px/1.3 "Pretendard Variable",sans-serif;color:var(--grey700)}
+
+/* ---------- car frame: pure white, one thing ---------- */
+.car{width:1700px;height:1150px;position:relative;overflow:hidden;border-radius:8px;background:#FFFFFF;
+  box-shadow:0 0 0 1px rgba(0,23,51,.07);padding:104px 120px 88px var(--col);display:flex;flex-direction:column}
+.shape{position:absolute;left:var(--gut);width:64px;height:64px}
+.shape svg{width:100%;height:100%;display:block}
+p,h1{margin:0;word-break:keep-all}
+
+/* L0 */
+.d .title{font-weight:700;font-size:60px;line-height:1.2;letter-spacing:-.025em}
+.d .shape{top:108px}
+.giant{margin-top:auto;display:flex;align-items:baseline;gap:28px}
+.giant b{font-weight:700;font-size:600px;line-height:.74;letter-spacing:-.055em;margin-left:-.04em;font-variant-numeric:tabular-nums}
+.giant span{font-weight:600;font-size:56px;color:var(--grey500)}
+.d .rest{margin-top:auto;font-weight:500;font-size:44px;line-height:1.3;color:var(--grey600)}
+
+/* L2 / L3: the sentence is the screen */
+.big{font-weight:800;font-size:216px;line-height:1.04;letter-spacing:-.05em;margin-left:-.03em}
+.w .shape,.x .shape{top:178px;width:72px;height:72px;left:116px}
+.ask{margin-top:28px;font-weight:600;font-size:60px;line-height:1.25;letter-spacing:-.025em;color:var(--grey800)}
+.quiet{margin-top:16px;font-weight:500;font-size:34px;line-height:1.5;color:var(--grey600)}
+.route{margin-top:auto;display:flex;align-items:center;gap:24px}
+.route .line{width:360px;height:28px;position:relative;flex:none}
+.route .line::before{content:"";position:absolute;left:28px;right:28px;top:50%;border-top:6px dotted var(--grey300);margin-top:-3px}
+.route .dot{position:absolute;top:50%;width:28px;height:28px;margin-top:-14px;border-radius:50%}
+.route .me{left:0;background:var(--blue);box-shadow:0 0 0 8px rgba(49,130,246,.16)}
+.route .to{right:0;background:var(--grey900)}
+.route .name{font-weight:700;font-size:40px;line-height:1.2;white-space:nowrap}
+.route .km{font-weight:600;font-size:40px;color:var(--grey600);white-space:nowrap}
+.btns{display:flex;gap:16px;margin-top:40px}
+.btn{flex:1;height:136px;border-radius:32px;font-weight:700;font-size:44px;letter-spacing:-.01em;display:flex;align-items:center;justify-content:center}
+.btn.p{background:var(--blue);color:#fff;flex:2}
+.btn.g{background:var(--grey100);color:var(--grey800)}
+.btn.r{background:var(--red-strong);color:#fff}
+.x .btns{margin-top:auto}
+.x .btn{font-size:42px}
+.x .btn.p{flex:1}
+
+/* ---------- phone ---------- */
+.phone{width:390px;height:844px;border-radius:44px;overflow:hidden;background:#fff;box-shadow:0 0 0 1px rgba(0,23,51,.08);
+  font-family:"Pretendard Variable",sans-serif;display:flex;flex-direction:column;position:relative}
+.sb{height:47px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 30px 6px;font-weight:600;font-size:16px}
+.sb i{display:flex;gap:6px;align-items:center}
+.sb i b{display:block;background:var(--grey900);border-radius:2px}
+.pnow{padding:28px 24px 0;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;color:var(--grey600)}
+.pnow svg{width:18px;height:18px}
+.ptitle{padding:12px 24px 0;font-weight:700;font-size:28px;line-height:1.36;letter-spacing:-.025em}
+.ptitle span{display:block;color:var(--grey500);font-weight:600}
+.plist{padding:48px 24px 0;display:flex;flex-direction:column;gap:32px}
+.pi span{display:block;font-size:15px;color:var(--grey600);line-height:1.4}
+.pi b{display:block;font-size:30px;font-weight:700;letter-spacing:-.025em;line-height:1.3;margin-top:4px;font-variant-numeric:tabular-nums}
+.pcta{margin-top:auto;padding:12px 16px 34px}
+.pcta div{height:56px;border-radius:16px;background:var(--blue);color:#fff;font-size:17px;font-weight:600;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="lv0" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#03B26C"/><path d="M28 51 44 67 74 35" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="lv2" viewBox="0 0 100 100"><path d="M50 3 97 85H3Z" fill="#FE9800" stroke="#C2410C" stroke-width="4" stroke-linejoin="round"/><path d="M50 38V63" stroke="#191F28" stroke-width="11" stroke-linecap="round"/><circle cx="50" cy="76" r="6.5" fill="#191F28"/></symbol>
+    <symbol id="lv3" viewBox="0 0 100 100"><path d="M96.2 69.1 69.1 96.2H30.9L3.8 69.1V30.9L30.9 3.8H69.1L96.2 30.9Z" fill="#F04452"/><path d="M27 50H73" stroke="#fff" stroke-width="13" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="sheet">
+  <div class="sheet-head">b-minimal · 토스 극단 미니멀 <span>차 1700×1150 · 폰 390×844 · 글꼴 Asta Sans(차), Pretendard(폰)</span></div>
+  <div class="row">
+
+    <!-- 1. driving, normal: the number is the screen -->
+    <div class="shot"><div class="cap">1 · 주행 중 정상 (L0)</div>
+      <section class="car d" role="img" aria-label="주행 중 정상 화면">
+        <div class="shape"><svg><use href="#lv0"/></svg></div>
+        <h1 class="title">편안한 운전 중이에요</h1>
+        <div class="giant"><b>76</b><span>bpm</span></div>
+        <p class="rest">다음 휴식 60분 뒤</p>
+      </section>
+    </div>
+
+    <!-- 2. warning: the sentence is the screen -->
+    <div class="shot"><div class="cap">2 · 경고 (L2)</div>
+      <section class="car w" role="img" aria-label="경고 화면">
+        <div class="shape"><svg><use href="#lv2"/></svg></div>
+        <h1 class="big">혈당이<br>낮아요</h1>
+        <p class="ask">휴게소로 안내할까요?</p>
+        <p class="quiet">휴게소에서 단 것을 드세요</p>
+        <div class="route">
+          <div class="line"><i class="dot me"></i><i class="dot to"></i></div>
+          <span class="name">성남졸음쉼터 <span class="km">· 3.6km</span></span>
+        </div>
+        <div class="btns"><div class="btn p">휴게소 안내</div><div class="btn g">다음에</div></div>
+      </section>
+    </div>
+
+    <!-- 3. stopped -->
+    <div class="shot"><div class="cap">3 · 정차 후 (L3)</div>
+      <section class="car x" role="img" aria-label="정차 후 화면">
+        <div class="shape"><svg><use href="#lv3"/></svg></div>
+        <h1 class="big">운전을 잠시<br>쉬어 주세요</h1>
+        <p class="ask">워치로 심전도를 재 주세요</p>
+        <p class="quiet">케어드라이브는 진단하지 않아요.<br>가슴이 아프거나 숨이 차면 119를 누르세요.</p>
+        <div class="btns"><div class="btn p">심전도 재기</div><div class="btn g">보호자 알림</div><div class="btn r">119 전화</div></div>
+      </section>
+    </div>
+
+    <!-- 4. phone -->
+    <div class="shot"><div class="cap">4 · 폰</div>
+      <section class="phone" role="img" aria-label="폰 화면">
+        <div class="sb"><span>9:41</span><i><b style="width:17px;height:11px"></b><b style="width:25px;height:12px;border-radius:3px"></b></i></div>
+        <div class="pnow"><svg><use href="#lv0"/></svg>지금 차 화면 · 정상</div>
+        <div class="ptitle">편안한 운전 중이에요<span>다음 휴식 60분 뒤</span></div>
+        <div class="plist">
+          <div class="pi"><span>어젯밤 수면</span><b>4시간 40분</b></div>
+          <div class="pi"><span>에너지 점수</span><b>45점</b></div>
+          <div class="pi"><span>심박</span><b>72 bpm</b></div>
+        </div>
+        <div class="pcta"><div>차로 보내기</div></div>
+      </section>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

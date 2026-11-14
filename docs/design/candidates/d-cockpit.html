@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark only">
+<title>콕핏 계기판</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* Asta Sans: the app's own bundled copy (OFL). Pretendard only as fallback. */
+@font-face{font-family:"Asta Sans";src:url("../../../car-app/app/src/main/res/font/asta_sans.ttf") format("truetype");font-weight:300 800;font-display:block}
+:root{
+  color-scheme:dark only;
+  --sheet:#15191E; --cap:#B0B8C1;
+  --bg:#07090C; --rule:#1E252D; --tick:#36404B; --tick-hi:#6B7684;
+  --ink:#EEF1F4; --sub:#9AA4AF; --dim:#8B95A1;
+  --ok:#2FD08E; --warn:#FFB020; --stop:#FF7A8C;
+  --blue:#1B64DA; --red:#D22030;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--sheet)}
+body{font-family:"Asta Sans","Pretendard Variable",Pretendard,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;word-break:keep-all}
+.sheet{display:flex;gap:64px;padding:64px;align-items:flex-start;width:max-content}
+.cap{font-size:28px;font-weight:600;line-height:1.3;margin:0 0 20px;color:var(--cap)}
+.cap span{font-weight:400;color:#8B95A1}
+
+.car{position:relative;width:1700px;height:1150px;overflow:hidden;border-radius:4px;background:
+  radial-gradient(1400px 700px at 50% -10%, #10151B, transparent 70%), var(--bg)}
+.num{font-feature-settings:"tnum" 1;letter-spacing:-.03em}
+
+/* status rail: one hairline across the top, like a cluster's tell-tale strip */
+.strip{position:absolute;left:80px;right:80px;top:64px;height:72px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule)}
+.state{display:flex;align-items:center;gap:18px;font-size:36px;font-weight:600;padding-bottom:18px;margin-bottom:-1px;border-bottom:3px solid currentColor}
+.state svg{width:52px;height:52px}
+.strip .meta{font-size:30px;color:var(--sub);padding-bottom:20px}
+
+/* ---------- L0: two full dials ---------- */
+.dials{position:absolute;left:80px;right:80px;top:176px;height:600px;display:flex;justify-content:space-between}
+.dial{position:relative;width:600px;height:600px}
+.dial svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.dial .read{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:20px}
+.dial .lbl{font-size:30px;color:var(--sub);font-weight:500}
+.dial .big{font-size:168px;font-weight:600;line-height:1;margin:10px 0 6px}
+.dial .unit{font-size:34px;color:var(--sub);font-weight:500}
+.mid{position:absolute;left:50%;top:330px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--sub);font-size:28px}
+.mid i{display:block;width:1px;height:120px;background:linear-gradient(var(--rule),var(--tick),var(--rule))}
+.foot{position:absolute;left:80px;right:80px;bottom:88px;border-top:1px solid var(--rule);padding-top:56px;text-align:center}
+.foot h1{margin:0;font-size:96px;font-weight:700;letter-spacing:-.035em;line-height:1.1}
+.foot p{margin:20px 0 0;font-size:44px;color:var(--sub);font-weight:500}
+
+/* ---------- L2 / L3: gauges retreat to the left rail ---------- */
+.rail{position:absolute;left:0;top:136px;bottom:0;width:380px;border-right:1px solid var(--rule);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:40px}
+.rail .dial{width:260px;height:260px}
+.rail .dial .read{padding-top:8px}
+.rail .dial .lbl{font-size:28px}
+.rail .dial .big{font-size:76px;margin:4px 0 0}
+.rail .dial .unit{font-size:28px}
+.stage{position:absolute;left:460px;right:80px;top:200px;bottom:96px;display:flex;flex-direction:column}
+.stage h1{margin:0;font-size:108px;font-weight:700;letter-spacing:-.035em;line-height:1.1}
+.stage .lead{margin:28px 0 0;font-size:58px;font-weight:500;letter-spacing:-.02em}
+.stage .aside{margin:28px 0 0;font-size:36px;line-height:1.45;color:var(--sub)}
+.row2{display:grid;grid-template-columns:1fr 500px;gap:56px}
+.btns{display:flex;gap:24px;margin-top:auto}
+.btn{height:124px;padding:0 52px;border-radius:20px;border:0;font-family:inherit;font-size:42px;font-weight:600;line-height:1;display:inline-flex;align-items:center;justify-content:center;gap:16px;color:var(--ink)}
+.btn svg{width:40px;height:40px}
+.primary{background:var(--blue);color:#fff;min-width:420px}
+.ghost{background:#11161C;box-shadow:inset 0 0 0 2px #2E3740;min-width:300px}
+.call{background:var(--red);color:#fff}
+
+/* HUD route schematic */
+.hud{border:1px solid var(--rule);border-radius:20px;background:#0B0F13;overflow:hidden}
+.hud svg{display:block;width:500px;height:360px}
+.hud .hd{display:flex;justify-content:space-between;align-items:baseline;padding:22px 28px 26px;border-top:1px solid var(--rule)}
+.hud .hd span{font-size:34px;font-weight:600}
+.hud .hd b{font-size:52px;font-weight:600;color:var(--warn)}
+.hud .hd b small{font-size:30px;color:var(--sub);font-weight:500;margin-left:4px}
+
+/* ---------- phone ---------- */
+.phone{width:390px;height:844px;border-radius:44px;overflow:hidden;background:var(--bg);position:relative;display:flex;flex-direction:column;font-family:"Pretendard Variable",Pretendard,"Asta Sans",sans-serif;box-shadow:0 0 0 1px #232A32}
+.p-top{padding:56px 24px 0;display:flex;justify-content:space-between;font-size:15px;color:var(--sub);font-weight:600}
+.p-car{margin:20px 20px 0;border:1px solid var(--rule);border-radius:20px;padding:20px;display:flex;align-items:center;gap:18px}
+.p-car .dial{width:120px;height:120px;flex:none}
+.p-car .dial .big{font-size:36px;margin:0}
+.p-car .dial .unit{font-size:13px}
+.p-car .dial .read{padding-top:6px}
+.p-car .st{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--sub);font-weight:600}
+.p-car .st svg{width:20px;height:20px}
+.p-car h2{margin:8px 0 6px;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.3}
+.p-car .m{font-size:15px;color:var(--sub)} .p-car .m b{color:var(--ink);font-weight:600}
+.p-body{padding:32px 24px 0;flex:1}
+.p-body h3{margin:0 0 6px;font-size:20px;font-weight:700}
+.prow{padding:18px 0;border-bottom:1px solid var(--rule)}
+.prow .l{display:flex;justify-content:space-between;align-items:baseline;font-size:17px;color:var(--sub)}
+.prow .l b{font-size:22px;color:var(--ink);font-weight:600;letter-spacing:-.02em}
+.prow .l b small{font-size:15px;color:var(--sub);font-weight:500;margin-left:2px}
+.scale{position:relative;height:14px;margin-top:12px}
+.scale .t{position:absolute;inset:0;background:repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 10%);}
+.scale .f{position:absolute;left:0;top:5px;height:4px;border-radius:2px;background:var(--ink)}
+.p-cta{padding:12px 20px 34px}
+.p-cta button{width:100%;height:56px;border:0;border-radius:16px;background:var(--blue);color:#fff;font:600 17px/1 "Pretendard Variable",sans-serif}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<!-- 1. L0 -->
+<section>
+  <p class="cap">1 · 주행 중 정상 <span>L0</span></p>
+  <div class="car">
+    <div class="strip">
+      <div class="state" style="color:var(--ok)"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" fill="var(--ok)"/><path d="M17 31l9 9 17-19" fill="none" stroke="#07090C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>정상</div>
+    </div>
+    <div class="dials">
+      <div class="dial" data-dial="hr" data-v="76" data-min="40" data-max="160" data-major="20" data-minor="5" data-color="var(--ok)" data-labels="1">
+        <div class="read"><span class="lbl">심박</span><span class="big num">76</span><span class="unit">bpm</span></div>
+      </div>
+      <div class="dial" data-dial="rest" data-v="60" data-min="0" data-max="120" data-major="30" data-minor="5" data-color="var(--ink)" data-labels="1" data-unit="분">
+        <div class="read"><span class="lbl">다음 휴식</span><span class="big num">60</span><span class="unit">분 뒤</span></div>
+      </div>
+    </div>
+    <div class="foot">
+      <h1>편안한 운전 중이에요</h1>
+      <p>다음 휴식 60분 뒤</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2. L2 -->
+<section>
+  <p class="cap">2 · 경고 <span>L2</span></p>
+  <div class="car">
+    <div class="strip">
+      <div class="state" style="color:var(--warn)"><svg viewBox="0 0 60 60" aria-hidden="true"><path d="M30 4 57 53H3z" fill="var(--warn)"/><path d="M30 22v15" stroke="#07090C" stroke-width="6" stroke-linecap="round"/><circle cx="30" cy="45" r="3.6" fill="#07090C"/></svg>경고</div>
+    </div>
+    <div class="rail">
+      <div class="dial" data-dial="hr" data-v="76" data-min="40" data-max="160" data-major="20" data-minor="10" data-color="var(--sub)">
+        <div class="read"><span class="lbl">심박</span><span class="big num">76</span><span class="unit">bpm</span></div>
+      </div>
+      <div class="dial" data-dial="rest" data-v="60" data-min="0" data-max="120" data-major="30" data-minor="10" data-color="var(--ink)">
+        <div class="read"><span class="lbl">다음 휴식</span><span class="big num">60</span><span class="unit">분 뒤</span></div>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="row2">
+        <div>
+          <h1>혈당이 낮아요</h1>
+          <p class="lead">휴게소로 안내할까요?</p>
+          <p class="aside">휴게소에서 단 것을 드세요</p>
+        </div>
+        <div class="hud" role="img" aria-label="성남졸음쉼터까지 3.6km 미리보기">
+          <svg viewBox="0 0 500 360" id="hud"></svg>
+          <div class="hd"><span>성남졸음쉼터</span><b class="num">3.6<small>km</small></b></div>
+        </div>
+      </div>
+      <div class="btns">
+        <button class="btn primary">휴게소 안내</button>
+        <button class="btn ghost">다음에</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. L3 -->
+<section>
+  <p class="cap">3 · 정차 후 <span>L3</span></p>
+  <div class="car">
+    <div class="strip">
+      <div class="state" style="color:var(--stop)"><svg viewBox="0 0 60 60" aria-hidden="true"><path d="M19 3h22l16 16v22L41 57H19L3 41V19z" fill="var(--stop)"/><path d="M17 30h26" stroke="#07090C" stroke-width="7" stroke-linecap="round"/></svg>정차 후</div>
+    </div>
+    <div class="rail">
+      <div class="dial" data-dial="hr" data-v="76" data-min="40" data-max="160" data-major="20" data-minor="10" data-color="var(--sub)">
+        <div class="read"><span class="lbl">심박</span><span class="big num">76</span><span class="unit">bpm</span></div>
+      </div>
+      <div class="dial" data-dial="rest" data-v="0" data-min="0" data-max="120" data-major="30" data-minor="10" data-color="var(--ink)">
+        <div class="read"><span class="lbl">휴식</span><span class="big" style="font-size:44px;margin:12px 0 4px">정차 중</span></div>
+      </div>
+    </div>
+    <div class="stage">
+      <h1>운전을 잠시 쉬어 주세요</h1>
+      <p class="lead">워치로 심전도를 재 주세요</p>
+      <p class="aside" style="max-width:1080px">케어드라이브는 진단하지 않아요. 가슴이 아프거나 숨이 차면 119를 누르세요.</p>
+      <div class="btns">
+        <button class="btn primary" style="min-width:380px">심전도 재기</button>
+        <button class="btn ghost">보호자 알림</button>
+        <button class="btn call"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M12 5l5 8-3.5 3.5a20 20 0 0 0 10 10L27 23l8 5-2 6c-1 2-3 2.5-5 2C17 33 7 23 4 12c-.5-2 0-4 2-5z" fill="#fff"/></svg>119 전화</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Phone -->
+<section>
+  <p class="cap">4 · 폰 화면 <span>390×844</span></p>
+  <div class="phone">
+    <div class="p-top"><span class="num">9:41</span><span>차와 연결됨</span></div>
+    <div class="p-car">
+      <div class="dial" data-dial="hr" data-v="76" data-min="40" data-max="160" data-major="20" data-minor="10" data-color="var(--ok)" data-thin="1">
+        <div class="read"><span class="big num">76</span><span class="unit">bpm</span></div>
+      </div>
+      <div>
+        <div class="st"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" fill="var(--ok)"/><path d="M17 31l9 9 17-19" fill="none" stroke="#07090C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>지금 차 상태 · 정상</div>
+        <h2>편안한 운전 중이에요</h2>
+        <div class="m">다음 휴식 <b class="num">60분</b> 뒤</div>
+      </div>
+    </div>
+    <div class="p-body">
+      <h3>오늘 컨디션</h3>
+      <div class="prow"><div class="l"><span>수면</span><b class="num">4<small>시간</small> 40<small>분</small></b></div><div class="scale"><div class="t"></div><div class="f" style="width:58%"></div></div></div>
+      <div class="prow"><div class="l"><span>에너지</span><b class="num">45<small>점</small></b></div><div class="scale"><div class="t"></div><div class="f" style="width:45%"></div></div></div>
+      <div class="prow"><div class="l"><span>심박</span><b class="num">72<small>bpm</small></b></div></div>
+    </div>
+    <div class="p-cta"><button>차로 보내기</button></div>
+  </div>
+</section>
+
+</div>
+<script>
+// Dials: 240-degree arc opening at the bottom, minor and major ticks, value arc.
+const NS="http://www.w3.org/2000/svg";
+const A0=-210, SWEEP=240;
+function el(n,a){const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e}
+function pt(cx,cy,r,deg){const t=deg*Math.PI/180;return[cx+r*Math.cos(t),cy+r*Math.sin(t)]}
+function arc(cx,cy,r,d0,d1){const[x0,y0]=pt(cx,cy,r,d0),[x1,y1]=pt(cx,cy,r,d1);return`M${x0} ${y0}A${r} ${r} 0 ${d1-d0>180?1:0} 1 ${x1} ${y1}`}
+document.querySelectorAll("[data-dial]").forEach(d=>{
+  const s=100, c=50, ds=d.dataset, min=+ds.min, max=+ds.max, v=+ds.v;
+  const svg=el("svg",{viewBox:"0 0 100 100"}); d.prepend(svg);
+  const small=d.offsetWidth<300, R=small?44:43, sw=small?(ds.thin?2.2:1.6):1.1;
+  const ang=x=>A0+SWEEP*(x-min)/(max-min);
+  svg.append(el("path",{d:arc(c,c,R,A0,A0+SWEEP),fill:"none",stroke:"#161C22","stroke-width":sw*2.2}));
+  if(v>min) svg.append(el("path",{d:arc(c,c,R,A0,ang(v)),fill:"none",stroke:ds.color,"stroke-width":sw*2.2,"stroke-linecap":"butt"}));
+  const tr=R-sw*2.2;
+  for(let x=min;x<=max+1e-6;x+=+ds.minor){
+    const major=Math.abs((x-min)%+ds.major)<1e-6, a=ang(x);
+    const len=major?(small?5:4.2):(small?2.6:2), [x0,y0]=pt(c,c,tr,a),[x1,y1]=pt(c,c,tr-len,a);
+    svg.append(el("line",{x1:x0,y1:y0,x2:x1,y2:y1,stroke:major?"var(--tick-hi)":"var(--tick)","stroke-width":major?(small?.9:.5):(small?.6:.3)}));
+    if(major&&ds.labels){const[lx,ly]=pt(c,c,tr-8.2,a);const t=el("text",{x:lx,y:ly+1.6,"text-anchor":"middle","font-size":"4.8",fill:"var(--dim)","font-weight":"500"});t.textContent=x;t.style.fontFeatureSettings='"tnum" 1';svg.append(t)}
+  }
+  if(v>min){const a=ang(v),[x0,y0]=pt(c,c,R+sw*1.8,a),[x1,y1]=pt(c,c,tr-(small?6:5.5),a);
+    svg.append(el("line",{x1:x0,y1:y0,x2:x1,y2:y1,stroke:"var(--ink)","stroke-width":small?1.4:.8,"stroke-linecap":"round"}))}
+});
+// HUD route: thin grid, roads as hairlines, route in amber, distance ticks.
+const h=document.getElementById("hud");
+for(let x=0;x<=500;x+=50)h.append(el("line",{x1:x,y1:0,x2:x,y2:360,stroke:"#12181E","stroke-width":1}));
+for(let y=0;y<=360;y+=50)h.append(el("line",{x1:0,y1:y,x2:500,y2:y,stroke:"#12181E","stroke-width":1}));
+[["M-10 96 C 140 110, 260 50, 510 76"],["M70 370 C 100 260, 80 160, 120 -10"],["M-10 270 C 170 246, 320 296, 510 248"]]
+  .forEach(([p])=>h.append(el("path",{d:p,fill:"none",stroke:"#2A323B","stroke-width":3})));
+const route="M250 380 C 250 310, 214 262, 274 206 S 360 124, 380 96";
+h.append(el("path",{d:route,fill:"none",stroke:"var(--warn)","stroke-width":5,"stroke-linecap":"round"}));
+h.append(el("path",{d:route,fill:"none",stroke:"#0B0F13","stroke-width":5,"stroke-dasharray":"2 30"}));
+h.append(el("circle",{cx:250,cy:330,r:9,fill:"var(--ink)"}));
+const g=el("g",{transform:"translate(380 96)"});g.append(el("circle",{r:26,fill:"none",stroke:"var(--warn)","stroke-width":2}));g.append(el("circle",{r:16,fill:"var(--warn)"}));h.append(g);
+</script>
+</body>
+</html>

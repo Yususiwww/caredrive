@@ -59,7 +59,7 @@ class AlertNotifier(private val context: Context, private val onAction: (String)
             .setOnlyAlertOnce(false)
         if (state.level == Level.L2_WARNING && !state.guidingToRest) {
             n.addAction(action("휴게소 안내", ACCEPT, 1))
-            n.addAction(action("괜찮아", DISMISS, 2))
+            n.addAction(action("다음에", DISMISS, 2))
         }
         manager.notify(ID, n.build())
     }

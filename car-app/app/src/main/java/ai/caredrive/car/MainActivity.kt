@@ -35,6 +35,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.json.Json
@@ -52,6 +53,8 @@ class MainActivity : ComponentActivity() {
     private var demoStatus by mutableStateOf<String?>(null)
     /** Demo: show the narrow (split-window) layout on the full-size emulator. */
     private var forceCompact by mutableStateOf(false)
+    /** Demo: `--es theme dark|light` forces a theme; null follows the system night mode (light by day). */
+    private var forceDark by mutableStateOf<Boolean?>(null)
     private lateinit var car: CarServices
     private lateinit var relay: RelayClient
     private var lastSentStatus: String? = null
@@ -139,6 +142,7 @@ class MainActivity : ComponentActivity() {
             if (intent.getBooleanExtra("ihrn", false)) pendingIhrn = true
             if (intent.hasExtra("advance")) advance(intent.getIntExtra("advance", 0))
             if (intent.hasExtra("compact")) forceCompact = intent.getBooleanExtra("compact", false)
+            intent.getStringExtra("theme")?.let { forceDark = when (it) { "dark" -> true; "light" -> false; else -> null } }
             if (intent.getBooleanExtra("call119", false)) actions.call119()
             evaluate()
         }
@@ -174,7 +178,7 @@ class MainActivity : ComponentActivity() {
         }
         main.post(tick)
         setContent {
-            CareTheme {
+            CareTheme(dark = forceDark ?: isSystemInDarkTheme()) {
                 CareScreen(state, actions, forceCompact) {
                     if (BuildConfig.DEBUG) DemoBar(demoStatus) { applyPreset(it); evaluate() }
                 }

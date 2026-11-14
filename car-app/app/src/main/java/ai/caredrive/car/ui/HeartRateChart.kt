@@ -19,14 +19,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * Heart-rate trend from real samples (not a waveform). No animation: it redraws only
  * when a new sample arrives, so it stays glanceable while driving (Pleos design rules).
  *
  * @param resting personal resting heart rate, drawn as a grey dashed line
- * @param limit caution threshold, drawn as an amber dashed line
+ * @param limit caution threshold, drawn as a dashed line in the caution colour
  */
 @Composable
 fun HeartRateChart(
@@ -47,13 +46,14 @@ fun HeartRateChart(
     val lo = (dataLo - pad).toFloat()
     val hi = (dataHi + pad).toFloat()
 
+    val palette = CareColor
     Column(modifier) {
         if (showLabels) {
             Row(Modifier.fillMaxWidth()) {
-                Text("최근 ${windowMs / 60_000}분 · ${visibleBpm.minOrNull() ?: "-"}–${visibleBpm.maxOrNull() ?: "-"} bpm", color = Color(0xFF94A3B8), fontSize = 30.sp, modifier = Modifier.weight(1f))
-                if (limit != null) Text("- - 주의 기준 $limit", color = Color(0xFFEAB308), fontSize = 30.sp)
+                Text("최근 ${windowMs / 60_000}분 · ${visibleBpm.minOrNull() ?: "-"}–${visibleBpm.maxOrNull() ?: "-"} bpm", color = CareColor.TextSecondary, style = CareType.caption, modifier = Modifier.weight(1f))
+                if (limit != null) Text("- - 주의 기준 $limit", color = palette.CautionText, style = CareType.caption)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(Space.m))
         }
         Canvas(Modifier.fillMaxWidth().weight(1f)) {
             val start = nowMs - windowMs
@@ -61,8 +61,8 @@ fun HeartRateChart(
             fun y(v: Int) = size.height - (v - lo) / (hi - lo) * size.height
 
             val dash = PathEffect.dashPathEffect(floatArrayOf(14f, 12f))
-            resting?.takeIf { it > lo && it < hi }?.let { drawLine(Color(0xFF475569), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
-            limit?.takeIf { it > lo && it < hi }?.let { drawLine(Color(0xFFEAB308), Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
+            resting?.takeIf { it > lo && it < hi }?.let { drawLine(palette.Hairline, Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
+            limit?.takeIf { it > lo && it < hi }?.let { drawLine(palette.CautionText, Offset(0f, y(it)), Offset(size.width, y(it)), 2.dp.toPx(), pathEffect = dash) }
 
             val visible = samples.filter { it.atMs >= start }
             if (visible.size >= 2) {
@@ -75,8 +75,8 @@ fun HeartRateChart(
             }
         }
         if (showLabels && resting != null) {
-            Spacer(Modifier.height(8.dp))
-            Text("- - 안정 심박 $resting", color = Color(0xFF94A3B8), fontSize = 30.sp, modifier = Modifier.align(Alignment.End))
+            Spacer(Modifier.height(Space.xs))
+            Text("- - 안정 심박 $resting", color = CareColor.TextTertiary, style = CareType.caption, modifier = Modifier.align(Alignment.End))
         }
     }
 }

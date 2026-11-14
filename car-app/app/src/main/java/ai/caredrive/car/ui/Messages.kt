@@ -45,7 +45,7 @@ object Messages {
     fun breakLine(state: CareState): String? {
         val next = state.nextBreakInMin ?: return null
         if (state.parked && state.drivingMin == 0) return state.readiness?.let { "오늘은 ${it.breakIntervalMin / 60.0}시간마다 휴식".replace(".0", "") }
-        return if (next > 0) "다음 휴식 ${next}분 뒤" else "휴식 시간 지남"
+        return if (next > 0) "다음 휴식 ${next}분 뒤" else "휴식 시간이 지났어요"
     }
 
     val guiding = Message("휴게소로 안내 중이에요", "도착하면 잠시 쉬어 가세요", spoken = true)
@@ -95,7 +95,7 @@ object Messages {
             else -> "휴식이 필요해요"
         }
         val note = when (s.reason) {
-            Reason.GLUCOSE_LOW -> "휴게소에서 당을 보충하세요"
+            Reason.GLUCOSE_LOW -> "휴게소에서 단 것을 드세요"
             Reason.BREAK_DUE, Reason.BREAK_OVERDUE -> "운전 ${s.drivingMin}분째"
             // CareDrive never controls the car: say so where stopping matters.
             else -> "차는 직접 안전한 곳에 세워 주세요"
@@ -121,7 +121,7 @@ object Messages {
 
     fun dataLine(state: CareState): String? = when (state.data) {
         DataState.LIVE -> null
-        DataState.STALE -> "워치 데이터 안 들어옴"
-        DataState.OFF -> "워치 데이터 끊김"
+        DataState.STALE -> "워치 값이 안 들어와요"
+        DataState.OFF -> "워치 연결이 끊겼어요"
     }
 }

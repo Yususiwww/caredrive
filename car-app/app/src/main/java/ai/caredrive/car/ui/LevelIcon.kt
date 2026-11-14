@@ -18,14 +18,17 @@ import kotlin.math.sin
 /**
  * Level symbol whose shape differs per level, so the level is clear without relying on colour
  * (colour-blind and older drivers): circle with check, diamond "!", triangle "!", stop octagon.
- * Static drawing, no animation.
+ * Static drawing, no animation. Pass the level's [CarePalette.level] colour. On the light theme the
+ * pale yellow and orange shapes get a thin dark edge so the outline still reads on white.
  */
 @Composable
 fun LevelIcon(level: Level, color: Color, modifier: Modifier = Modifier) {
+    val palette = CareColor
+    val edge = palette.levelEdge(level)
     Canvas(modifier) {
         val w = size.minDimension
         val c = Offset(size.width / 2, size.height / 2)
-        val mark = if (level == Level.L1_CAUTION || level == Level.L2_WARNING) Color(0xFF0B1220) else Color.White
+        val mark = if (level == Level.L1_CAUTION || level == Level.L2_WARNING) palette.OnLight else Color.White
         val stroke = w * 0.11f
         when (level) {
             Level.L0_NORMAL -> {
@@ -38,13 +41,17 @@ fun LevelIcon(level: Level, color: Color, modifier: Modifier = Modifier) {
                 drawPath(check, mark, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
             Level.L1_CAUTION -> {
-                drawPath(polygon(c, w / 2, 4, -PI / 2), color)
+                val shape = polygon(c, w / 2, 4, -PI / 2)
+                drawPath(shape, color)
+                edge?.let { drawPath(shape, it, style = Stroke(w * 0.04f, join = StrokeJoin.Round)) }
                 exclamation(c, w * 0.62f, mark, stroke)
             }
             Level.L2_WARNING -> {
                 // Triangle with the centroid a little low, like a road warning sign.
                 val r = w * 0.56f
-                drawPath(polygon(Offset(c.x, c.y + w * 0.08f), r, 3, -PI / 2), color)
+                val shape = polygon(Offset(c.x, c.y + w * 0.08f), r, 3, -PI / 2)
+                drawPath(shape, color)
+                edge?.let { drawPath(shape, it, style = Stroke(w * 0.04f, join = StrokeJoin.Round)) }
                 exclamation(Offset(c.x, c.y + w * 0.1f), w * 0.5f, mark, stroke)
             }
             Level.L3_STOPPED -> {

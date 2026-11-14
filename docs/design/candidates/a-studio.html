@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<title>스튜디오 그라데이션</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+@font-face{font-family:"Asta Sans";src:url("../../../car-app/app/src/main/res/font/asta_sans.ttf") format("truetype");font-weight:300 800;font-display:block}
+:root{
+  color-scheme: light only;
+  --grey50:#F9FAFB;--grey100:#F2F4F6;--grey200:#E5E8EB;--grey300:#D1D6DB;--grey400:#B0B8C1;
+  --grey500:#8B95A1;--grey600:#6B7684;--grey700:#4E5968;--grey800:#333D4B;--grey900:#191F28;
+  --blue:#3182F6;--blue50:#E8F3FF;--red-strong:#D22030;
+  /* the studio backdrop: light from the top left, falling to soft grey */
+  --studio:
+    radial-gradient(55% 50% at 16% 6%, rgba(255,255,255,1) 0%, rgba(255,255,255,.7) 40%, rgba(255,255,255,0) 100%),
+    radial-gradient(120% 115% at 20% 4%, #FFFFFF 0%, #F4F6F8 20%, #E4E8EC 46%, #D2D8DF 72%, #C3CAD3 100%);
+  --frost: rgba(255,255,255,.62);
+  --frost-edge: rgba(255,255,255,.9);
+  --lift: 0 1px 0 rgba(255,255,255,.95) inset, 0 2px 6px rgba(0,23,51,.04), 0 32px 64px -24px rgba(0,23,51,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#F2F4F6;font-family:"Asta Sans","Pretendard Variable",sans-serif;color:var(--grey900);-webkit-font-smoothing:antialiased}
+.sheet{padding:96px;display:flex;flex-direction:column;gap:40px;width:max-content}
+.sheet-head{font:700 40px/1.2 "Pretendard Variable",sans-serif;letter-spacing:-.02em;display:flex;gap:24px;align-items:baseline}
+.sheet-head span{font-weight:500;font-size:28px;color:var(--grey600)}
+.row{display:flex;gap:80px;align-items:flex-start}
+.shot{display:flex;flex-direction:column;gap:20px}
+.cap{font:600 26px/1.3 "Pretendard Variable",sans-serif;color:var(--grey700)}
+
+/* ---------- car frame ---------- */
+.car{width:1700px;height:1150px;position:relative;overflow:hidden;border-radius:8px;background:var(--studio);
+  box-shadow:0 0 0 1px rgba(0,23,51,.06);display:grid;grid-template-columns:500px 1fr;gap:32px;padding:56px}
+.car::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .52  0 0 0 0 .56  0 0 0 .05 0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>")}
+.frost{background:var(--frost);-webkit-backdrop-filter:blur(28px) saturate(1.3);backdrop-filter:blur(28px) saturate(1.3);
+  border:1.5px solid var(--frost-edge);box-shadow:var(--lift);border-radius:40px}
+.status{align-self:start;padding:48px 48px 52px;display:flex;flex-direction:column;gap:28px}
+.lv{display:flex;align-items:center;gap:16px;font-weight:700;font-size:40px;line-height:1.2;letter-spacing:-.01em}
+.lv svg{width:56px;height:56px;flex:none}
+.bpm{display:flex;align-items:flex-end;gap:16px}
+.bpm b{font-weight:800;font-size:168px;line-height:.82;letter-spacing:-.045em;font-variant-numeric:tabular-nums}
+.bpm .u{display:flex;flex-direction:column;gap:6px;padding-bottom:6px;color:var(--grey600);font-size:40px;font-weight:600;line-height:1}
+.bpm .u svg{width:72px;height:40px}
+
+.say{display:flex;flex-direction:column;gap:20px}
+.car.drive{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+.car.drive .status{justify-self:start;width:500px}
+.car.drive .say{align-self:end;padding:0 48px 40px}
+.car.drive .t{font-size:104px;line-height:1.1}
+.car.drive .s{font-size:52px}
+.t{font-weight:800;font-size:84px;line-height:1.14;letter-spacing:-.03em;margin:0;text-wrap:balance;word-break:keep-all}
+.s{font-weight:600;font-size:48px;line-height:1.3;letter-spacing:-.02em;color:var(--grey700);margin:0;word-break:keep-all}
+.n{font-weight:500;font-size:34px;line-height:1.45;color:var(--grey600);margin:0;word-break:keep-all}
+
+.alert{padding:56px 64px 64px;display:flex;flex-direction:column}
+.alert .lv{margin-bottom:28px}
+.alert .t{font-size:84px}
+.alert .s{margin-top:12px}
+.alert .n{margin-top:14px}
+.place{margin-top:auto;display:flex;flex-direction:column;gap:16px}
+.place-name{font-weight:700;font-size:36px;line-height:1.3;letter-spacing:-.01em}
+.place-name span{color:var(--grey600);font-weight:600}
+.map{height:292px;border-radius:28px;overflow:hidden;background:#E9ECF0;box-shadow:0 0 0 1px rgba(0,23,51,.05) inset}
+.map svg{display:block;width:100%;height:100%}
+.btns{display:flex;gap:16px;margin-top:36px}
+.btn{flex:1;height:128px;border:0;border-radius:28px;font:700 42px/1 "Asta Sans",sans-serif;letter-spacing:-.01em;display:flex;align-items:center;justify-content:center}
+.btn.p{background:var(--blue);color:#fff;flex:1.5;box-shadow:0 16px 32px -16px rgba(49,130,246,.7)}
+.btn.g{background:#E5E8EB;color:var(--grey800)}
+.btn.r{background:var(--red-strong);color:#fff}
+.stop .btns{margin-top:auto}
+.stop .btn{font-size:40px}
+.stop .n{font-size:38px;margin-top:20px}
+
+/* ---------- phone ---------- */
+.phone{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;background:var(--studio);
+  box-shadow:0 0 0 1px rgba(0,23,51,.08);font-family:"Pretendard Variable",sans-serif;display:flex;flex-direction:column}
+.phone .frost{border-radius:24px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset,0 1px 3px rgba(0,23,51,.04),0 16px 32px -16px rgba(0,23,51,.16)}
+.sb{height:47px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 30px 6px;font-weight:600;font-size:16px}
+.sb i{display:flex;gap:6px;align-items:center}
+.sb i b{display:block;background:var(--grey900);border-radius:2px}
+.ph{padding:20px 24px 12px;font-weight:700;font-size:26px;line-height:1.35;letter-spacing:-.02em}
+.pbody{padding:8px 16px;display:flex;flex-direction:column;gap:12px}
+.pc{padding:22px 22px}
+.plv{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--grey700)}
+.plv svg{width:22px;height:22px}
+.pt{font-size:22px;font-weight:700;line-height:1.4;letter-spacing:-.02em;margin:10px 0 2px}
+.pn{font-size:15px;color:var(--grey600);line-height:1.5}
+.pk{font-size:17px;font-weight:700;margin:0 0 6px}
+.prow{display:flex;justify-content:space-between;align-items:center;height:52px;font-size:17px}
+.prow span{color:var(--grey700)}
+.prow b{font-weight:600;font-variant-numeric:tabular-nums}
+.pcta{margin-top:auto;padding:12px 16px 34px}
+.pcta div{height:56px;border-radius:16px;background:var(--blue);color:#fff;font-size:17px;font-weight:600;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="lv0" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#03B26C"/><path d="M28 51 44 67 74 35" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="lv2" viewBox="0 0 100 100"><path d="M50 3 97 85H3Z" fill="#FE9800" stroke="#C2410C" stroke-width="4" stroke-linejoin="round"/><path d="M50 38V63" stroke="#191F28" stroke-width="11" stroke-linecap="round"/><circle cx="50" cy="76" r="6.5" fill="#191F28"/></symbol>
+    <symbol id="lv3" viewBox="0 0 100 100"><path d="M96.2 69.1 69.1 96.2H30.9L3.8 69.1V30.9L30.9 3.8H69.1L96.2 30.9Z" fill="#F04452"/><path d="M27 50H73" stroke="#fff" stroke-width="13" stroke-linecap="round"/></symbol>
+    <symbol id="beat" viewBox="0 0 36 20"><path d="M1 11H9L12 4 16 17 20 7 23 11H35" fill="none" stroke="#8B95A1" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="sheet">
+  <div class="sheet-head">a-studio · 스튜디오 그라데이션 <span>차 1700×1150 · 폰 390×844 · 글꼴 Asta Sans(차), Pretendard(폰)</span></div>
+  <div class="row">
+
+    <!-- 1. driving, normal -->
+    <div class="shot"><div class="cap">1 · 주행 중 정상 (L0)</div>
+      <section class="car drive" role="img" aria-label="주행 중 정상 화면">
+        <div class="frost status">
+          <div class="lv"><svg><use href="#lv0"/></svg>정상</div>
+          <div class="bpm"><b>76</b><div class="u"><svg><use href="#beat"/></svg>bpm</div></div>
+        </div>
+        <div class="say">
+          <h1 class="t">편안한 운전 중이에요</h1>
+          <p class="s">다음 휴식 60분 뒤</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- 2. warning -->
+    <div class="shot"><div class="cap">2 · 경고 (L2)</div>
+      <section class="car" role="img" aria-label="경고 화면">
+        <div class="frost status">
+          <div class="bpm"><b>76</b><div class="u"><svg><use href="#beat"/></svg>bpm</div></div>
+        </div>
+        <div class="frost alert">
+          <div class="lv"><svg><use href="#lv2"/></svg>경고</div>
+          <h1 class="t">혈당이 낮아요</h1>
+          <p class="s">휴게소로 안내할까요?</p>
+          <p class="n">휴게소에서 단 것을 드세요</p>
+          <div class="place">
+            <div class="place-name">성남졸음쉼터 <span>· 3.6km</span></div>
+            <div class="map">
+              <svg viewBox="0 0 928 268" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <rect width="928" height="268" fill="#E9ECF0"/>
+                <path d="M0 210C160 196 250 150 390 150S640 120 928 40" stroke="#fff" stroke-width="30" fill="none"/>
+                <path d="M120 0C150 90 170 170 150 268" stroke="#fff" stroke-width="14" fill="none"/>
+                <path d="M520 0C510 70 560 150 600 268" stroke="#fff" stroke-width="14" fill="none"/>
+                <path d="M0 80C200 90 300 60 470 70" stroke="#F7F8FA" stroke-width="8" fill="none"/>
+                <path d="M700 268C730 200 760 160 820 140" stroke="#F7F8FA" stroke-width="8" fill="none"/>
+                <path d="M280 268C300 220 340 200 390 150" stroke="#F7F8FA" stroke-width="8" fill="none"/>
+                <path d="M150 196C250 168 300 150 390 150S640 120 760 84" stroke="#3182F6" stroke-width="10" stroke-linecap="round" fill="none"/>
+                <circle cx="150" cy="196" r="20" fill="#3182F6" stroke="#fff" stroke-width="6"/>
+                <circle cx="760" cy="84" r="20" fill="#191F28" stroke="#fff" stroke-width="6"/>
+              </svg>
+            </div>
+          </div>
+          <div class="btns"><div class="btn p">휴게소 안내</div><div class="btn g">다음에</div></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 3. stopped -->
+    <div class="shot"><div class="cap">3 · 정차 후 (L3)</div>
+      <section class="car" role="img" aria-label="정차 후 화면">
+        <div class="frost status">
+          <div class="bpm"><b>76</b><div class="u"><svg><use href="#beat"/></svg>bpm</div></div>
+        </div>
+        <div class="frost alert stop">
+          <div class="lv"><svg><use href="#lv3"/></svg>정차 후 조치</div>
+          <h1 class="t">운전을 잠시 쉬어 주세요</h1>
+          <p class="s">워치로 심전도를 재 주세요</p>
+          <p class="n">케어드라이브는 진단하지 않아요.<br>가슴이 아프거나 숨이 차면 119를 누르세요.</p>
+          <div class="btns"><div class="btn p" style="flex:1">심전도 재기</div><div class="btn g">보호자 알림</div><div class="btn r">119 전화</div></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 4. phone -->
+    <div class="shot"><div class="cap">4 · 폰</div>
+      <section class="phone" role="img" aria-label="폰 화면">
+        <div class="sb"><span>9:41</span><i><b style="width:17px;height:11px"></b><b style="width:25px;height:12px;border-radius:3px"></b></i></div>
+        <div class="ph">케어드라이브</div>
+        <div class="pbody">
+          <div class="frost pc">
+            <div class="pk">지금 차 화면</div>
+            <div class="plv"><svg><use href="#lv0"/></svg>정상</div>
+            <div class="pt">편안한 운전 중이에요</div>
+            <div class="pn">다음 휴식 60분 뒤</div>
+          </div>
+          <div class="frost pc">
+            <div class="pk">오늘 컨디션</div>
+            <div class="prow"><span>어젯밤 수면</span><b>4시간 40분</b></div>
+            <div class="prow"><span>에너지 점수</span><b>45점</b></div>
+            <div class="prow"><span>심박</span><b>72 bpm</b></div>
+          </div>
+        </div>
+        <div class="pcta"><div>차로 보내기</div></div>
+      </section>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

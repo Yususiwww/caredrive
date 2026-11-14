@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light only">
+<title>앰비언트 컬러 필드</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* Asta Sans: the app's own bundled copy (OFL). Pretendard only as fallback. */
+@font-face{font-family:"Asta Sans";src:url("../../../car-app/app/src/main/res/font/asta_sans.ttf") format("truetype");font-weight:300 800;font-display:block}
+:root{
+  color-scheme:light only;
+  --sheet:#DCE0E4; --sheet-ink:#333D4B;
+  /* L0 calm: deep sea-glass */
+  --n-base:#0A242C; --n-glow:#1A5A57; --n-ink:#F2FBF8; --n-sub:#C3E8DF; --n-strip:#6FD6C4;
+  /* L2 warm amber */
+  --w-base:#3A1D03; --w-glow:#8C4C08; --w-ink:#FFF7EC; --w-sub:#FFE4C2; --w-strip:#FFB547;
+  /* L3 rose, low and still */
+  --s-base:#260B13; --s-glow:#6E2335; --s-ink:#FFF1F3; --s-sub:#F8D3DB; --s-strip:#F08AA0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--sheet)}
+body{font-family:"Asta Sans","Pretendard Variable",Pretendard,sans-serif;color:var(--sheet-ink);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;word-break:keep-all}
+.sheet{display:flex;gap:64px;padding:64px;align-items:flex-start;width:max-content}
+.cap{font:600 28px/1.3 "Asta Sans","Pretendard Variable",sans-serif;margin:0 0 20px;color:var(--sheet-ink)}
+.cap span{font-weight:400;color:#4E5968}
+
+/* ---------- car frame ---------- */
+.car{position:relative;width:1700px;height:1150px;overflow:hidden;border-radius:4px;padding:96px 112px 112px;display:flex;flex-direction:column}
+.car::after{content:"";position:absolute;left:0;right:0;bottom:0;height:10px;background:var(--strip);box-shadow:0 -6px 40px 6px var(--strip);opacity:.75}
+.normal{--strip:var(--n-strip);color:var(--n-ink);background:
+  radial-gradient(1200px 900px at 82% 18%, var(--n-glow), transparent 70%),
+  radial-gradient(900px 700px at 0% 110%, #12403F, transparent 70%), var(--n-base)}
+.warn{--strip:var(--w-strip);color:var(--w-ink);background:
+  radial-gradient(1300px 950px at 85% 12%, var(--w-glow), transparent 72%),
+  radial-gradient(1000px 800px at 0% 110%, #5E3106, transparent 70%), var(--w-base)}
+.stop{--strip:var(--s-strip);color:var(--s-ink);background:
+  radial-gradient(1300px 950px at 85% 12%, var(--s-glow), transparent 72%),
+  radial-gradient(900px 700px at 0% 110%, #45141F, transparent 70%), var(--s-base)}
+
+.state{display:flex;align-items:center;gap:20px;font-weight:600;font-size:40px;letter-spacing:-.01em}
+.state svg{width:60px;height:60px;flex:none}
+.hr{display:flex;align-items:baseline;gap:14px;font-size:40px;font-weight:500}
+.hr b{font-weight:600;font-size:56px;letter-spacing:-.02em}
+.hr svg{width:40px;height:40px;align-self:center}
+.top{display:flex;justify-content:space-between;align-items:center}
+
+h1{margin:0;font-weight:700;letter-spacing:-.035em;line-height:1.12;text-wrap:balance}
+.lead{margin:0;font-weight:500;letter-spacing:-.02em;line-height:1.3}
+.aside{margin:0;font-size:36px;line-height:1.45;font-weight:400}
+
+/* L0 */
+.normal .body{margin-top:auto;margin-bottom:auto;padding-top:40px}
+.normal h1{font-size:120px}
+.normal .lead{font-size:60px;margin-top:36px;color:var(--n-sub)}
+
+/* L2 / L3 shared */
+.alert{flex:1;display:grid;grid-template-columns:1fr 600px;gap:72px;margin-top:88px}
+.alert h1{font-size:104px}
+.alert .lead{font-size:60px;margin-top:28px}
+.alert .aside{margin-top:32px}
+.warn .aside{color:var(--w-sub)} .stop .aside{color:var(--s-sub)}
+.btns{display:flex;gap:24px;margin-top:auto}
+.btn{height:128px;padding:0 56px;border-radius:28px;font-family:inherit;font-size:42px;font-weight:600;line-height:1;display:inline-flex;align-items:center;justify-content:center;gap:16px;border:0;letter-spacing:-.01em}
+.btn svg{width:40px;height:40px}
+.warn .primary{background:#FFF4E2;color:#4A2A05;min-width:460px}
+.warn .ghost{background:transparent;color:var(--w-ink);box-shadow:inset 0 0 0 3px rgba(255,228,194,.7);min-width:300px}
+.stop .primary{background:#FFF1F3;color:#4A1220;min-width:400px}
+.stop .ghost{background:transparent;color:var(--s-ink);box-shadow:inset 0 0 0 3px rgba(248,211,219,.7)}
+.stop .call{background:#D22030;color:#fff;box-shadow:inset 0 0 0 3px rgba(255,241,243,.55)}
+
+/* map placeholder: a schematic, not a picture */
+.map{align-self:start;border-radius:32px;overflow:hidden;background:rgba(20,8,0,.38);box-shadow:inset 0 0 0 2px rgba(255,228,194,.18)}
+.map svg{display:block;width:600px;height:440px}
+.map p{margin:0;padding:24px 32px 28px;font-size:36px;font-weight:600;display:flex;justify-content:space-between}
+.map p span{font-weight:500;color:var(--w-sub)}
+.stopnote{align-self:start;font-size:36px;line-height:1.45;color:var(--s-sub);padding-top:12px}
+
+/* ---------- phone ---------- */
+.phone{width:390px;height:844px;border-radius:44px;overflow:hidden;background:#fff;position:relative;display:flex;flex-direction:column;font-family:"Pretendard Variable",Pretendard,"Asta Sans",sans-serif;box-shadow:0 20px 50px -20px rgba(0,23,51,.35)}
+.p-field{height:340px;padding:56px 24px 28px;color:var(--n-ink);background:
+  radial-gradient(420px 320px at 90% 0%, var(--n-glow), transparent 70%), var(--n-base);display:flex;flex-direction:column;position:relative}
+.p-field::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--n-strip);box-shadow:0 -2px 16px 2px var(--n-strip);opacity:.7}
+.p-status{display:flex;justify-content:space-between;font-size:15px;font-weight:600;color:var(--n-sub)}
+.p-state{display:flex;align-items:center;gap:8px;margin-top:40px;font-size:15px;font-weight:600;color:var(--n-sub)}
+.p-state svg{width:20px;height:20px}
+.p-field h2{margin:10px 0 0;font-size:28px;line-height:1.3;font-weight:700;letter-spacing:-.02em}
+.p-field .p-meta{margin-top:auto;display:flex;gap:20px;font-size:15px;color:var(--n-sub)}
+.p-field .p-meta b{color:var(--n-ink);font-weight:600}
+.p-body{padding:28px 24px 0;flex:1}
+.p-body h3{margin:0 0 8px;font-size:20px;font-weight:700;color:#191F28;letter-spacing:-.01em}
+.p-body .hint{margin:0 0 16px;font-size:15px;color:#6B7684}
+.row{display:flex;justify-content:space-between;align-items:baseline;padding:16px 0;font-size:17px;color:#4E5968}
+.row+.row{border-top:1px solid #F2F4F6}
+.row b{color:#191F28;font-weight:600}
+.p-cta{padding:12px 20px 34px}
+.p-cta button{width:100%;height:56px;border:0;border-radius:16px;background:#0F3E42;color:#fff;font:600 17px/1 "Pretendard Variable",sans-serif}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<!-- 1. L0 -->
+<section>
+  <p class="cap">1 · 주행 중 정상 <span>L0</span></p>
+  <div class="car normal">
+    <div class="top">
+      <div class="state">
+        <svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" fill="var(--n-strip)"/><path d="M17 31l9 9 17-19" fill="none" stroke="#0A242C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        정상
+      </div>
+      <div class="hr">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 34S5 25 5 14.5A8 8 0 0 1 20 10a8 8 0 0 1 15 4.5C35 25 20 34 20 34z" fill="var(--n-sub)"/></svg>
+        <b>76</b> bpm
+      </div>
+    </div>
+    <div class="body">
+      <h1>편안한 운전 중이에요</h1>
+      <p class="lead">다음 휴식 60분 뒤</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2. L2 -->
+<section>
+  <p class="cap">2 · 경고 <span>L2</span></p>
+  <div class="car warn">
+    <div class="top">
+      <div class="state">
+        <svg viewBox="0 0 60 60" aria-hidden="true"><path d="M30 4 57 53H3z" fill="var(--w-strip)" stroke-linejoin="round"/><path d="M30 22v15" stroke="#2A1504" stroke-width="6" stroke-linecap="round"/><circle cx="30" cy="45" r="3.6" fill="#2A1504"/></svg>
+        경고
+      </div>
+      <div class="hr">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 34S5 25 5 14.5A8 8 0 0 1 20 10a8 8 0 0 1 15 4.5C35 25 20 34 20 34z" fill="var(--w-sub)"/></svg>
+        <b>76</b> bpm
+      </div>
+    </div>
+    <div class="alert">
+      <div style="display:flex;flex-direction:column">
+        <h1>혈당이 낮아요</h1>
+        <p class="lead">휴게소로 안내할까요?</p>
+        <p class="aside">휴게소에서 단 것을 드세요</p>
+        <div class="btns">
+          <button class="btn primary">휴게소 안내</button>
+          <button class="btn ghost">다음에</button>
+        </div>
+      </div>
+      <div class="map" role="img" aria-label="성남졸음쉼터까지 3.6km 미리보기">
+        <svg viewBox="0 0 600 440">
+          <g fill="none" stroke="rgba(255,228,194,.16)" stroke-width="14" stroke-linecap="round">
+            <path d="M-20 120 C 160 140, 300 60, 620 90"/>
+            <path d="M80 460 C 120 320, 90 200, 140 -20"/>
+            <path d="M-20 330 C 200 300, 380 360, 620 300"/>
+          </g>
+          <path d="M300 470 C 300 380, 260 320, 330 250 S 430 150, 452 118" fill="none" stroke="#FFF4E2" stroke-width="12" stroke-linecap="round"/>
+          <circle cx="300" cy="400" r="18" fill="#FFF4E2"/><circle cx="300" cy="400" r="8" fill="#7A410A"/>
+          <g transform="translate(452 118)"><circle r="34" fill="var(--w-strip)"/><path d="M-11 -14h13a9 9 0 0 1 0 18h-13zM-11 4v14" fill="none" stroke="#2A1504" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></g>
+        </svg>
+        <p>성남졸음쉼터 <span>3.6km</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. L3 -->
+<section>
+  <p class="cap">3 · 정차 후 <span>L3</span></p>
+  <div class="car stop">
+    <div class="top">
+      <div class="state">
+        <svg viewBox="0 0 60 60" aria-hidden="true"><path d="M19 3h22l16 16v22L41 57H19L3 41V19z" fill="var(--s-strip)"/><path d="M17 30h26" stroke="#260B13" stroke-width="7" stroke-linecap="round"/></svg>
+        정차 후
+      </div>
+      <div class="hr">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 34S5 25 5 14.5A8 8 0 0 1 20 10a8 8 0 0 1 15 4.5C35 25 20 34 20 34z" fill="var(--s-sub)"/></svg>
+        <b>76</b> bpm
+      </div>
+    </div>
+    <div class="alert" style="grid-template-columns:1fr">
+      <div style="display:flex;flex-direction:column">
+        <h1>운전을 잠시 쉬어 주세요</h1>
+        <p class="lead">워치로 심전도를 재 주세요</p>
+        <p class="aside" style="max-width:1180px">케어드라이브는 진단하지 않아요. 가슴이 아프거나 숨이 차면 119를 누르세요.</p>
+        <div class="btns">
+          <button class="btn primary">심전도 재기</button>
+          <button class="btn ghost">보호자 알림</button>
+          <button class="btn call"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M12 5l5 8-3.5 3.5a20 20 0 0 0 10 10L27 23l8 5-2 6c-1 2-3 2.5-5 2C17 33 7 23 4 12c-.5-2 0-4 2-5z" fill="#fff"/></svg>119 전화</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Phone -->
+<section>
+  <p class="cap">4 · 폰 화면 <span>390×844</span></p>
+  <div class="phone">
+    <div class="p-field">
+      <div class="p-status"><span>9:41</span><span>차와 연결됨</span></div>
+      <div class="p-state">
+        <svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" fill="var(--n-strip)"/><path d="M17 31l9 9 17-19" fill="none" stroke="#0A242C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        지금 차 상태 · 정상
+      </div>
+      <h2>편안한 운전 중이에요</h2>
+      <div class="p-meta"><span>심박 <b>76 bpm</b></span><span>다음 휴식 <b>60분 뒤</b></span></div>
+    </div>
+    <div class="p-body">
+      <h3>오늘 컨디션</h3>
+      <div class="row"><span>수면</span><b>4시간 40분</b></div>
+      <div class="row"><span>에너지</span><b>45점</b></div>
+      <div class="row"><span>심박</span><b>72 bpm</b></div>
+    </div>
+    <div class="p-cta"><button>차로 보내기</button></div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

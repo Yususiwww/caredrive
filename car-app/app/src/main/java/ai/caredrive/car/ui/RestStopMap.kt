@@ -11,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +53,8 @@ private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
 fun RestStopMap(car: GeoPos?, rest: RestPreview, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val restHex = CareColor.Warning.hex()
+    val carHex = CareColor.Accent.hex()
     val mapView = remember {
         MapLibre.getInstance(context)
         // Draw Hangul/CJK labels with the device font: the tile server's glyph set misses some characters.
@@ -88,7 +91,7 @@ fun RestStopMap(car: GeoPos?, rest: RestPreview, modifier: Modifier = Modifier) 
                 if (style == null || !style.isFullyLoaded) {
                     map.setStyle(Style.Builder().fromUri(STYLE_URL)) { s ->
                         koreanLabels(s)
-                        addMarkers(s)
+                        addMarkers(s, restHex, carHex)
                         // Fit after the view has its final size, otherwise the bounds fit uses 0×0.
                         view.post { show(map, s, car, rest) }
                     }
@@ -100,8 +103,8 @@ fun RestStopMap(car: GeoPos?, rest: RestPreview, modifier: Modifier = Modifier) 
         // Required attribution for OpenFreeMap / OpenMapTiles / OpenStreetMap.
         Text(
             "© OpenFreeMap © OpenMapTiles © OpenStreetMap",
-            color = Color(0xFF475569), fontSize = 14.sp,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            color = CareColor.TextTertiary, fontSize = 14.sp,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(Space.xs),
         )
     }
 }
@@ -122,17 +125,17 @@ private fun koreanLabels(style: Style) {
     }
 }
 
-private fun addMarkers(style: Style) {
+private fun addMarkers(style: Style, restHex: String, carHex: String) {
     style.addSource(GeoJsonSource("cd-rest", FeatureCollection.fromFeatures(emptyList())))
     style.addSource(GeoJsonSource("cd-car", FeatureCollection.fromFeatures(emptyList())))
     style.addLayer(
         CircleLayer("cd-rest-dot", "cd-rest").withProperties(
-            circleRadius(16f), circleColor("#F97316"), circleStrokeColor("#FFFFFF"), circleStrokeWidth(5f),
+            circleRadius(16f), circleColor(restHex), circleStrokeColor("#FFFFFF"), circleStrokeWidth(5f),
         )
     )
     style.addLayer(
         CircleLayer("cd-car-dot", "cd-car").withProperties(
-            circleRadius(13f), circleColor("#2563EB"), circleStrokeColor("#FFFFFF"), circleStrokeWidth(5f),
+            circleRadius(13f), circleColor(carHex), circleStrokeColor("#FFFFFF"), circleStrokeWidth(5f),
         )
     )
 }
@@ -150,3 +153,6 @@ private fun show(map: MapLibreMap, style: Style, car: GeoPos?, rest: RestPreview
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(rest.lat, rest.lon), 14.0))
     }
 }
+
+/** Map style colours come from the same tokens as the screen: rest stop = warning, car = accent. */
+private fun Color.hex() = "#%06X".format(toArgb() and 0xFFFFFF)

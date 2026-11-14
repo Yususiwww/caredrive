@@ -2,115 +2,264 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>케어드라이브 폰 시뮬레이터</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
+  /* TDS colors only. blue500 is the one accent; red/orange/green carry state, never decoration. */
   :root {
-    --bg: #eef2f7; --card: #ffffff; --ink: #0f172a; --sub: #64748b; --line: #e2e8f0;
-    --acc: #0f766e; --warn: #c2410c; --l0: #14b8a6; --l1: #eab308; --l2: #f97316; --l3: #f43f5e;
+    --blue500: #3182f6; --blue600: #2272eb; --blue50: #e8f3ff;
+    --grey50: #f9fafb; --grey100: #f2f4f6; --grey200: #e5e8eb; --grey300: #d1d6db; --grey400: #b0b8c1;
+    --grey500: #8b95a1; --grey600: #6b7684; --grey700: #4e5968; --grey800: #333d4b; --grey900: #191f28;
+    --red500: #f04452; --red700: #d22030; --red50: #ffeeee; --green500: #03b26c; --orange500: #fe9800;
+
+    --bg: var(--grey100); --surface: #ffffff; --ink: var(--grey900); --ink2: var(--grey700); --ink3: var(--grey600);
+    --line: var(--grey200); --track: var(--grey200); --fill: var(--grey100); --fill-press: var(--grey200);
+    --thumb: #ffffff; --danger-bg: var(--red50); --danger-ink: var(--red700); --accent-bg: var(--blue50); --accent-ink: var(--blue500);
+
+    /* Level dots. JS sets carLevel's color from these, so the big word stays readable. */
+    --l0: var(--ink); --l1: var(--ink); --l2: var(--red500); --l3: var(--red700);
+
+    --r-card: 24px; --r-btn: 16px; --r-ctl: 12px;
+    --ease: cubic-bezier(.2, .8, .2, 1);
   }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101013; --surface: #1d1d22; --ink: #f2f4f6; --ink2: #c4cad1; --ink3: #9aa3ad;
+      --line: #2c2c33; --track: #3a3a42; --fill: #2c2c33; --fill-press: #3a3a42; --thumb: #f2f4f6;
+      --danger-bg: #3a1d21; --danger-ink: #ff8a93; --accent-bg: #1b2c45; --accent-ink: #64a8ff;
+      --l2: #ff6b76; --l3: #ff8a93;
+    }
+  }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-  main { max-width: 440px; margin: 0 auto; padding: 16px 16px 40px; }
-  header { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 2px 12px; }
-  h1 { font-size: 20px; margin: 0; }
-  .sim { font-size: 12px; font-weight: 700; color: var(--warn); background: #fff1e8; border-radius: 6px; padding: 2px 8px; }
-  .card { background: var(--card); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.06); }
-  h2 { font-size: 13px; color: var(--sub); margin: 0 0 10px; font-weight: 700; letter-spacing: .02em; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
-  .row label { flex: 1; }
-  .row output { font-weight: 700; min-width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
-  input[type=range] { width: 100%; accent-color: var(--acc); }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  button { font: inherit; font-weight: 700; border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; background: var(--line); color: var(--ink); }
-  button.primary { background: var(--acc); color: #fff; }
-  button.danger { background: var(--l3); color: #fff; }
-  button.on { background: var(--ink); color: #fff; }
-  button:disabled { opacity: .45; cursor: default; }
-  .peers { display: flex; gap: 14px; font-size: 13px; color: var(--sub); }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; margin-right: 6px; vertical-align: 1px; }
-  .dot.ok { background: var(--l0); }
-  .car { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; align-items: baseline; }
-  .level { font-size: 22px; font-weight: 800; }
-  .muted { color: var(--sub); font-size: 13px; }
-  .switch { display: flex; align-items: center; gap: 10px; }
-  .switch input { width: 20px; height: 20px; accent-color: var(--acc); }
-  select { font: inherit; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 400 1rem/1.5 "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", sans-serif;
+    font-feature-settings: "tnum"; -webkit-font-smoothing: antialiased; word-break: keep-all;
+  }
+  ::selection { background: var(--blue50); color: var(--grey900); }
+  :focus-visible { outline: 2px solid var(--blue500); outline-offset: 2px; }
+  main { max-width: 440px; margin: 0 auto; padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
+
+  /* Top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 20px; }
+  .bar h1 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .sim { font-size: .8125rem; font-weight: 600; color: var(--ink2); background: var(--surface); border-radius: 8px; padding: 4px 10px; }
+
+  /* One card recipe for every section */
+  .card { background: var(--surface); border-radius: var(--r-card); padding: 24px 20px; margin: 0 12px 12px; }
+  .card > h2 { margin: 0; font-size: 1.25rem; line-height: 1.45; font-weight: 700; letter-spacing: -0.02em; }
+  .card > .desc { margin: 4px 0 0; font-size: .875rem; color: var(--ink3); }
+  .card > h2 + .list, .card > .desc + .list { margin-top: 16px; }
+
+  /* Car status */
+  .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .head h2 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .peers { display: flex; gap: 12px; font-size: .8125rem; color: var(--ink3); }
+  .peer { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--grey400); flex: none; }
+  .dot.ok { background: var(--green500); }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .peer .on { display: none; }
+  .peer:has(.dot.ok) .on { display: inline; }
+  .peer:has(.dot.ok) .off { display: none; }
+  .level-row { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+  .level-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--grey300); flex: none; transition: background-color 200ms var(--ease); }
+  #carCard[data-level="L0_NORMAL"] .level-dot { background: var(--green500); }
+  #carCard[data-level="L1_CAUTION"] .level-dot { background: var(--orange500); }
+  #carCard[data-level="L2_WARNING"] .level-dot, #carCard[data-level="L3_STOPPED"] .level-dot { background: var(--red500); }
+  .level { font-size: 1.875rem; line-height: 1.33; font-weight: 700; letter-spacing: -0.03em; }
+  .reason { margin: 4px 0 0 22px; font-size: 1rem; color: var(--ink2); min-height: 1.5em; }
+
+  /* List rows */
+  .list { margin: 20px 0 0; padding: 0; }
+  .item { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 8px 0; }
+  .item dt, .item .label { color: var(--ink2); font-size: 1rem; }
+  .item dd { margin: 0; text-align: right; font-weight: 600; }
+  .item dd.soft { color: var(--ink3); font-weight: 500; font-size: .9375rem; }
+  .label small { display: block; font-size: .8125rem; color: var(--ink3); margin-top: 2px; }
+  output { font-weight: 700; font-size: 1.0625rem; color: var(--ink); text-align: right; white-space: nowrap; }
+
+  /* Slider field: label + value, then track */
+  .field { padding: 12px 0 14px; }
+  .field .item { min-height: 0; padding: 0; }
+  .field input[type=range] { margin-top: 12px; }
+  .big { font-size: 1.875rem; line-height: 1.33; font-weight: 700; letter-spacing: -0.03em; }
+
+  input[type=range] {
+    --p: 50%; -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 28px; margin: 0;
+    background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, var(--blue500) var(--p), var(--track) var(--p));
+  }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--track); }
+  input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--blue500); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 24px; height: 24px; margin-top: -9px; border-radius: 50%;
+    background: var(--thumb); box-shadow: 0 1px 4px rgba(0, 23, 51, .22); transition: transform 150ms var(--ease);
+  }
+  input[type=range]::-moz-range-thumb { width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--thumb); box-shadow: 0 1px 4px rgba(0, 23, 51, .22); }
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.1); }
+  input[type=range]:focus-visible { outline-offset: 4px; border-radius: 8px; }
+  input[type=range]:disabled { cursor: default; }
+  input[type=range]:disabled::-webkit-slider-runnable-track { background: var(--track); }
+  input[type=range]:disabled::-webkit-slider-thumb { box-shadow: 0 1px 3px rgba(0, 23, 51, .12); background: var(--grey50); }
+  input[type=range]:disabled::-moz-range-progress { background: var(--track); }
+
+  /* Switch (checkbox restyled; still a native checkbox for scripts and keyboards) */
+  input.switch {
+    -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 52px; height: 32px; margin: 0;
+    border-radius: 16px; background: var(--track); cursor: pointer; transition: background-color 180ms var(--ease);
+  }
+  input.switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 23, 51, .2); transition: transform 180ms var(--ease);
+  }
+  input.switch:checked { background: var(--blue500); }
+  input.switch:checked::after { transform: translateX(20px); }
+  .item label { cursor: pointer; }
+  .toggle { display: flex; align-items: center; gap: 12px; }
+  .toggle output { font-size: .9375rem; font-weight: 600; }
+
+  /* Select */
+  select {
+    -webkit-appearance: none; appearance: none; font: inherit; font-weight: 600; font-size: 1rem; color: var(--ink);
+    background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%238b95a1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 12px center;
+    border: 0; border-radius: var(--r-ctl); padding: 10px 36px 10px 14px; cursor: pointer;
+  }
+
+  .divider { height: 1px; background: var(--line); margin: 8px 0; border: 0; }
+
+  /* Buttons: one shape, three weights */
+  button {
+    font: inherit; font-weight: 600; font-size: 1rem; border: 0; border-radius: var(--r-btn); min-height: 52px; padding: 10px 12px; line-height: 1.3;
+    cursor: pointer; background: var(--fill); color: var(--ink); transition: transform 90ms var(--ease), background-color 150ms var(--ease);
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: scale(.98); background: var(--fill-press); }
+  button.primary { width: 100%; min-height: 56px; margin-top: 20px; background: var(--blue500); color: #fff; font-size: 1.0625rem; }
+  button.primary:active { background: var(--blue600); }
+  button.danger { background: var(--danger-bg); color: var(--danger-ink); }
+  button.accent { background: var(--accent-bg); color: var(--accent-ink); }
+  button.on { background: var(--grey900); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; transform: none; }
+  @media (hover: hover) and (pointer: fine) {
+    button:hover { filter: brightness(.97); }
+  }
+
+  .group { margin-top: 20px; }
+  .group h3 { margin: 0 0 8px; font-size: .875rem; font-weight: 600; color: var(--ink3); }
+  .grid { display: grid; gap: 8px; }
+  .grid.c3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.c2 { grid-template-columns: repeat(2, 1fr); }
+  .wide { width: 100%; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>케어드라이브 폰</h1>
+  <header class="bar">
+    <h1>케어드라이브</h1>
     <span class="sim">시뮬레이션 데이터</span>
   </header>
 
-  <section class="card">
-    <h2>연결</h2>
-    <div class="peers">
-      <span><i class="dot" id="dotRelay"></i>중계 서버</span>
-      <span><i class="dot" id="dotCar"></i>차량 앱</span>
+  <section class="card" id="carCard" aria-live="polite">
+    <div class="head">
+      <h2>지금 차 화면</h2>
+      <div class="peers">
+        <span class="peer"><i class="dot" id="dotRelay"></i>중계 서버<span class="vh on">연결됨</span><span class="vh off">연결 안 됨</span></span>
+        <span class="peer"><i class="dot" id="dotCar"></i>차량 앱<span class="vh on">연결됨</span><span class="vh off">연결 안 됨</span></span>
+      </div>
     </div>
+    <div class="level-row">
+      <span class="level-dot" aria-hidden="true"></span>
+      <span class="level" id="carLevel">기다리는 중</span>
+    </div>
+    <p class="reason" id="carReason">차 앱이 연결되면 바로 보여요</p>
+    <dl class="list">
+      <div class="item"><dt>운전</dt><dd id="carDriving">-</dd></div>
+      <div class="item"><dt>스트레스</dt><dd id="carStress">-</dd></div>
+      <div class="item"><dt>최근 동작</dt><dd id="carEvent" class="soft">-</dd></div>
+    </dl>
   </section>
 
   <section class="card">
-    <h2>차 화면 상태</h2>
-    <div class="car">
-      <span class="level" id="carLevel">-</span><span class="muted" id="carReason"></span>
-      <span class="muted">운전</span><span id="carDriving">-</span>
-      <span class="muted">스트레스</span><span id="carStress">-</span>
-      <span class="muted">최근 동작</span><span id="carEvent" class="muted">-</span>
+    <h2>오늘 컨디션</h2>
+    <p class="desc">삼성 헬스에서 읽은 값이에요</p>
+    <div class="list">
+      <div class="field"><div class="item"><label class="label" for="sleep">어젯밤 수면</label><output id="sleepOut"></output></div>
+        <input id="sleep" type="range" min="120" max="600" step="10" value="280"></div>
+      <div class="field"><div class="item"><label class="label" for="energy">에너지 점수</label><output id="energyOut"></output></div>
+        <input id="energy" type="range" min="10" max="100" step="1" value="45"></div>
+      <div class="field"><div class="item"><label class="label" for="resting">안정 심박</label><output id="restingOut"></output></div>
+        <input id="resting" type="range" min="45" max="95" step="1" value="68"></div>
+      <div class="field"><div class="item"><label class="label" for="spo2">수면 중 최저 산소포화도</label><output id="spo2Out"></output></div>
+        <input id="spo2" type="range" min="82" max="100" step="1" value="95"></div>
+      <div class="field"><div class="item"><label class="label" for="skin">피부 온도<small>평소와 비교한 값이에요</small></label><output id="skinOut"></output></div>
+        <input id="skin" type="range" min="-1" max="2" step="0.1" value="0.2"></div>
+      <div class="field"><div class="item"><label class="label" for="bp">최근 수축기 혈압</label><output id="bpOut"></output></div>
+        <input id="bp" type="range" min="100" max="200" step="1" value="128"></div>
+      <div class="field"><div class="item"><label class="label" for="baseRmssd">평소 심박변이도<small>워치 앱에서 잰 값이에요</small></label><output id="baseRmssdOut"></output></div>
+        <input id="baseRmssd" type="range" min="15" max="80" step="1" value="42"></div>
+      <hr class="divider">
+      <div class="item"><label class="label" for="mood">출발 전 기분</label>
+        <select id="mood"><option value="">차에서 고를게요</option><option value="GOOD">좋아요</option><option value="OK">보통이에요</option><option value="TIRED">피곤해요</option><option value="STRESSED">스트레스 받았어요</option></select>
+      </div>
+      <div class="item"><label class="label" for="apnea">수면무호흡 기록</label><input id="apnea" type="checkbox" class="switch" role="switch"></div>
+      <div class="item"><label class="label" for="recentIhrn">최근 부정맥 알림</label><input id="recentIhrn" type="checkbox" class="switch" role="switch"></div>
+      <div class="item"><label class="label" for="exercise">30분 안에 운동했어요</label><input id="exercise" type="checkbox" class="switch" role="switch"></div>
     </div>
-  </section>
-
-  <section class="card">
-    <h2>오늘 컨디션 (삼성 헬스에서 읽은 값)</h2>
-    <div class="row"><label for="sleep">어젯밤 수면</label><output id="sleepOut"></output></div>
-    <input id="sleep" type="range" min="120" max="600" step="10" value="280">
-    <div class="row"><label for="energy">에너지 점수</label><output id="energyOut"></output></div>
-    <input id="energy" type="range" min="10" max="100" step="1" value="45">
-    <div class="row"><label for="resting">안정 심박</label><output id="restingOut"></output></div>
-    <input id="resting" type="range" min="45" max="95" step="1" value="68">
-    <div class="row"><label for="spo2">수면 중 최저 산소포화도</label><output id="spo2Out"></output></div>
-    <input id="spo2" type="range" min="82" max="100" step="1" value="95">
-    <div class="row"><label for="skin">피부온도 (평소 대비)</label><output id="skinOut"></output></div>
-    <input id="skin" type="range" min="-1" max="2" step="0.1" value="0.2">
-    <div class="row"><label for="bp">최근 수축기 혈압</label><output id="bpOut"></output></div>
-    <input id="bp" type="range" min="100" max="200" step="1" value="128">
-    <div class="row"><label for="baseRmssd">평소 심박변이도 (워치 앱)</label><output id="baseRmssdOut"></output></div>
-    <input id="baseRmssd" type="range" min="15" max="80" step="1" value="42">
-    <div class="row"><label for="mood">기분 (출발 전 직접 입력)</label>
-      <select id="mood"><option value="">차에서 고르기</option><option value="GOOD">좋아요</option><option value="OK">보통</option><option value="TIRED">피곤해요</option><option value="STRESSED">스트레스</option></select>
-    </div>
-    <div class="row switch"><input id="apnea" type="checkbox"><label for="apnea">수면무호흡 감지 기록</label></div>
-    <div class="row switch"><input id="recentIhrn" type="checkbox"><label for="recentIhrn">최근 부정맥 알림</label></div>
-    <div class="row switch"><input id="exercise" type="checkbox"><label for="exercise">30분 안에 운동함</label></div>
     <button class="primary" id="sendCondition">차로 보내기</button>
   </section>
 
   <section class="card">
-    <h2>실시간 (워치)</h2>
-    <div class="row"><label for="hr">심박</label><output id="hrOut"></output></div>
-    <input id="hr" type="range" min="35" max="160" step="1" value="74">
-    <div class="row switch"><input id="glucoseOn" type="checkbox"><label for="glucoseOn">연속혈당측정기 연결</label><output id="glucoseOut"></output></div>
-    <input id="glucose" type="range" min="40" max="200" step="1" value="105" disabled>
-    <div class="row switch"><input id="hrvOn" type="checkbox"><label for="hrvOn">심박변이도 (워치 앱 박동 간격)</label><output id="rmssdOut"></output></div>
-    <input id="rmssd" type="range" min="8" max="80" step="1" value="40" disabled>
-    <div class="row"><label for="jitter">심박 자연스럽게 흔들기</label><input id="jitter" type="checkbox" checked></div>
+    <h2>실시간 워치 데이터</h2>
+    <p class="desc">1초마다 차로 보내요</p>
+    <div class="list">
+      <div class="field"><div class="item"><label class="label" for="hr">심박</label><output id="hrOut" class="big"></output></div>
+        <input id="hr" type="range" min="35" max="160" step="1" value="74"></div>
+      <div class="item"><label class="label" for="jitter">심박 자연스럽게 흔들기<small>호흡에 맞춰 조금씩 오르내려요</small></label><input id="jitter" type="checkbox" class="switch" role="switch" checked></div>
+      <hr class="divider">
+      <div class="field"><div class="item"><label class="label" for="glucoseOn">연속혈당측정기</label>
+          <span class="toggle"><output id="glucoseOut"></output><input id="glucoseOn" type="checkbox" class="switch" role="switch"></span></div>
+        <input id="glucose" type="range" min="40" max="200" step="1" value="105" disabled></div>
+      <div class="field"><div class="item"><label class="label" for="hrvOn">심박변이도<small>박동 간격으로 계산해요</small></label>
+          <span class="toggle"><output id="rmssdOut"></output><input id="hrvOn" type="checkbox" class="switch" role="switch"></span></div>
+        <input id="rmssd" type="range" min="8" max="80" step="1" value="40" disabled></div>
+    </div>
   </section>
 
   <section class="card">
-    <h2>이벤트</h2>
-    <div class="chips">
-      <button class="danger" id="sendIhrn">부정맥 알림 보내기</button>
-      <button id="driveOn">주행 시작</button>
-      <button id="driveOff">정차</button>
-      <button id="driveReal">실제 기어 사용</button>
-      <button id="adv10">+10분</button>
-      <button id="adv30">+30분</button>
-      <button id="scenario">시나리오 ▶</button>
+    <h2>시연 도구</h2>
+    <p class="desc">실제 차에서는 기어와 시간을 차가 알려줘요</p>
+    <div class="group">
+      <h3>주행</h3>
+      <div class="grid c3">
+        <button id="driveOn">주행 시작</button>
+        <button id="driveOff">정차</button>
+        <button id="driveReal">실제 기어</button>
+      </div>
     </div>
-    <p class="muted">주행·시간 버튼은 시연용입니다. 실제 차에서는 기어와 시간을 차가 알려줍니다.</p>
+    <div class="group">
+      <h3>시간 감기</h3>
+      <div class="grid c2">
+        <button id="adv10">+10분</button>
+        <button id="adv30">+30분</button>
+      </div>
+    </div>
+    <div class="group">
+      <h3>워치 알림</h3>
+      <button class="danger wide" id="sendIhrn">부정맥 알림 보내기</button>
+    </div>
+    <div class="group">
+      <button class="accent wide" id="scenario">시나리오 재생하기</button>
+    </div>
   </section>
 </main>
 
@@ -141,7 +290,8 @@
   }
 
   function showStatus(s) {
-    const [label, color] = LEVEL[s.level] ?? [s.level, '--sub'];
+    const [label, color] = LEVEL[s.level] ?? [s.level, '--ink'];
+    $('carCard').dataset.level = s.level;
     $('carLevel').textContent = label;
     $('carLevel').style.color = `var(${color})`;
     $('carReason').textContent = REASON[s.reason] ?? s.reason;
@@ -175,10 +325,13 @@
   // Same formula as the car (Hrv.stress): 0 at baseline, 100 at 40% of baseline.
   const stressOf = (rmssd) => Math.max(0, Math.min(100, Math.round((1 - rmssd / +$('baseRmssd').value) / 0.6 * 100)));
 
+  // Paint the blue part of each slider track (visual only).
+  const fill = (el) => el.style.setProperty('--p', `${((el.value - el.min) / (el.max - el.min)) * 100}%`);
+
   function labels() {
     const m = +$('sleep').value;
     $('sleepOut').textContent = `${Math.floor(m / 60)}시간 ${m % 60}분`;
-    $('energyOut').textContent = $('energy').value;
+    $('energyOut').textContent = `${$('energy').value}점`;
     $('restingOut').textContent = `${$('resting').value} bpm`;
     $('hrOut').textContent = `${+$('hr').value + jitter} bpm`;
     $('glucoseOut').textContent = $('glucoseOn').checked ? `${$('glucose').value} mg/dL` : '';
@@ -189,6 +342,7 @@
     $('baseRmssdOut').textContent = `${$('baseRmssd').value} ms`;
     $('rmssdOut').textContent = $('hrvOn').checked ? `${$('rmssd').value} ms · 스트레스 ${stressOf(+$('rmssd').value)}` : '';
     $('rmssd').disabled = !$('hrvOn').checked;
+    document.querySelectorAll('input[type=range]').forEach(fill);
   }
 
   ['sleep', 'energy', 'resting', 'spo2', 'skin', 'bp', 'baseRmssd'].forEach((id) => $(id).addEventListener('input', labels));

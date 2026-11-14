@@ -7,3 +7,9 @@ local.properties
 .DS_Store
 node_modules/
 docs/demo/*.mp4
+
+# Design skills installed locally (impeccable pbakaus/impeccable@b4bff16, taste-skill Leonxlnx/taste-skill@f6b7657)
+.claude/skills/
+
+# Planning PDFs stay local; the application form goes by email
+docs/planning/*.pdf

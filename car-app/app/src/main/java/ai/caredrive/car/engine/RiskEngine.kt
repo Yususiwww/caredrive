@@ -43,7 +43,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
     /** Stress at or above this for 5 minutes is a caution; lower when the driver said they are stressed. */
     fun stressLimit() = if (moodStressed) STRESS_LIMIT_MOOD else STRESS_LIMIT
 
-    /** Driver said "괜찮아": the same reason stays quiet until this time. */
+    /** Driver said "다음에": the same reason stays quiet until this time. */
     private var snoozeUntil = 0L
     private var snoozedReason = Reason.NONE
 
@@ -62,7 +62,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
     fun hrLimit() = restingHr + (if (readiness.factors.any { it.kind == FactorKind.RECENT_IHRN }) 20 else 30) +
         (if (recentExercise) 10 else 0)
 
-    /** Driver said "괜찮아": quiet this reason for a while and go back to normal. */
+    /** Driver said "다음에": quiet this reason for a while and go back to normal. */
     fun dismiss(now: Long) {
         snoozedReason = last.reason
         snoozeUntil = now + SNOOZE_MS
@@ -166,7 +166,7 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
         const val CAUTION_ESCALATE_MIN = 15
         const val OVERDUE_MIN = 30
         const val BREAK_RESET_MIN = 10
-        /** "괜찮아" quiets the same reason for 15 minutes (Mercedes 15, Hyundai 10). Other reasons still alert. */
+        /** "다음에" quiets the same reason for 15 minutes (Mercedes 15, Hyundai 10). Other reasons still alert. */
         const val SNOOZE_MS = 15 * MIN
     }
 }

@@ -123,14 +123,22 @@ await sleep(6000); // TTS init + relay connect
 adb('logcat', '-c');
 
 await call('Page.startScreencast', { format: 'jpeg', quality: 85 });
+// Video and sound are two scrcpy sessions: one session doing both came out silent on this emulator,
+// while an audio-only session records the car's voice and chimes reliably. compose.py lines them up.
 const rec = spawn('scrcpy', [
-  '--no-window', '--no-playback', '--audio-source=playback', '--audio-dup', '--max-size=1920', '--video-bit-rate=12M',
+  '--no-window', '--no-playback', '--no-audio', '--max-size=1920', '--video-bit-rate=12M',
   `--record=${join(OUT, 'car.mkv')}`,
 ], { env: { ...process.env, ADB } });
-// scrcpy buffers its log when not on a terminal, so watch the file instead: recording starts when it grows.
-for (let i = 0; i < 100 && timeline.carStart === 0; i++) {
+const recAudio = spawn('scrcpy', [
+  '--no-window', '--no-playback', '--no-video', '--audio-source=playback', '--audio-dup',
+  `--record=${join(OUT, 'car_audio.mka')}`,
+], { env: { ...process.env, ADB } });
+// scrcpy buffers its log when not on a terminal, so watch the files instead: recording starts when they grow.
+timeline.audioStart = 0;
+for (let i = 0; i < 150 && (timeline.carStart === 0 || timeline.audioStart === 0); i++) {
   await sleep(100);
-  try { if (statSync(join(OUT, 'car.mkv')).size > 0) timeline.carStart = Date.now(); } catch {}
+  try { if (!timeline.carStart && statSync(join(OUT, 'car.mkv')).size > 0) timeline.carStart = Date.now(); } catch {}
+  try { if (!timeline.audioStart && statSync(join(OUT, 'car_audio.mka')).size > 0) timeline.audioStart = Date.now(); } catch {}
 }
 await sleep(1000);
 
@@ -210,7 +218,8 @@ clearInterval(heartbeat);
 await hazard(false);
 await call('Page.stopScreencast');
 rec.kill('SIGINT');
-await new Promise((r) => rec.once('exit', r));
+recAudio.kill('SIGINT');
+await Promise.all([new Promise((r) => rec.once('exit', r)), new Promise((r) => recAudio.once('exit', r))]);
 
 timeline.speaks = adb('logcat', '-d', '-v', 'epoch', '-s', 'CareDrive:I')
   .split('\n')

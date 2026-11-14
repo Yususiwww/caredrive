@@ -24,7 +24,9 @@ PHONE_H = 774
 PHONE = (W - 64 - round(PHONE_H * 860 / 1864), 184)
 INTRO, OUTRO, XF = 4.0, 5.5, 0.6     # seconds; XF = crossfade
 
-INK, SUB, MUTE, BLUE = (25, 31, 40), (78, 89, 104), (107, 118, 132), (49, 130, 246)
+# Dark cockpit palette, matching the app's design D.
+INK, SUB, MUTE, BLUE = (242, 244, 246), (176, 184, 193), (139, 149, 161), (49, 130, 246)
+OPENING = ROOT / "docs/demo/ai-scenes/opening.mp4"  # AI-made staged opening (optional)
 
 # What each scenario chapter shows, and what was fed in to make it happen.
 CHAPTERS = [
@@ -53,21 +55,21 @@ def font(size, weight=700):
 
 
 def backdrop():
-    """Soft studio gradient: bright top-left falling to light grey (same as the app's light theme)."""
+    """Dark radial backdrop: a faint glow at the top left falling to near-black (the app's cockpit theme)."""
     small = Image.new("RGB", (192, 108))
     px = small.load()
     for y in range(108):
         for x in range(192):
             d = (((x - 50) / 192) ** 2 + ((y - 15) / 108) ** 2) ** 0.5 / 1.05
             t = min(1.0, d)
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip((255, 255, 255), (217, 222, 227)))
+            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip((30, 35, 44), (9, 11, 14)))
     return small.resize((W, H), Image.BICUBIC)
 
 
 def shadow(img, box, radius, blur=28, alpha=60, dy=12):
     x, y, w, h = box
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(layer).rounded_rectangle((x, y + dy, x + w, y + h + dy), radius, fill=(0, 23, 51, alpha))
+    ImageDraw.Draw(layer).rounded_rectangle((x, y + dy, x + w, y + h + dy), radius, fill=(0, 0, 0, alpha * 2))
     img.alpha_composite(layer.filter(ImageFilter.GaussianBlur(blur)))
 
 
@@ -86,6 +88,19 @@ tl = json.loads((OUT / "timeline.json").read_text())
 t0 = tl["carStart"]
 dur = (tl["carEnd"] - t0) / 1000
 pw = round(PHONE_H * 860 / 1864)
+
+
+def media_len(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+                         capture_output=True, text=True).stdout.strip()
+    return float(out or 0)
+
+
+# scrcpy starts writing a few seconds before the recorder notices the file, so trim that lead-in:
+# both recordings end when the scenario ends, so their extra length is the lead-in.
+AUDIO = OUT / "car_audio.mka" if (OUT / "car_audio.mka").exists() else OUT / "car.mkv"
+lead_v = max(0.0, media_len(OUT / "car.mkv") - dur)
+lead_a = max(0.0, media_len(AUDIO) - dur)
 
 # Main background with soft shadows under both screens and the two small source labels.
 bg = backdrop().convert("RGBA")
@@ -121,13 +136,13 @@ def speech_img(i, text):
     w, h = int(tw + 140), 76
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((0, 0, w - 1, h - 1), h // 2, fill=(25, 31, 40, 235))
+    d.rounded_rectangle((0, 0, w - 1, h - 1), h // 2, fill=(242, 244, 246, 240))
     # Small speaker glyph: the car is speaking these exact words.
     cx, cy = 42, h // 2
     d.polygon([(cx - 14, cy - 7), (cx - 6, cy - 7), (cx + 4, cy - 15), (cx + 4, cy + 15), (cx - 6, cy + 7), (cx - 14, cy + 7)],
-              fill=(144, 194, 255))
-    d.arc((cx - 2, cy - 12, cx + 18, cy + 12), -50, 50, fill=(144, 194, 255), width=3)
-    d.text((84, 14), text, font=f, fill=(255, 255, 255))
+              fill=BLUE)
+    d.arc((cx - 2, cy - 12, cx + 18, cy + 12), -50, 50, fill=BLUE, width=3)
+    d.text((84, 14), text, font=f, fill=(25, 31, 40))
     p = OUT / f"cap_sp{i}.png"
     img.save(p)
     return p, w, h
@@ -162,12 +177,13 @@ inputs = ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "bg.png"),
           "-i", str(OUT / "car.mkv"),
           "-f", "concat", "-safe", "0", "-i", str(OUT / "phone.txt"),
           "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "mask_car.png"),
-          "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "mask_phone.png")]
+          "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "mask_phone.png"),
+          "-i", str(AUDIO)]
 for p, *_ in caps:
     inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(p)]
-base = 5
+base = 6
 
-flt = [f"[1:v]scale={CAR[2]}:{CAR[3]},setpts=PTS-STARTPTS,format=rgba[c0]",
+flt = [f"[1:v]trim=start={lead_v:.3f},setpts=PTS-STARTPTS,scale={CAR[2]}:{CAR[3]},format=rgba[c0]",
        "[3:v]format=gray[mc]", "[c0][mc]alphamerge[car]",
        f"[2:v]scale={pw}:{PHONE_H},setpts=PTS-STARTPTS,format=rgba[p0]",
        "[4:v]format=gray[mp]", "[p0][mp]alphamerge[ph]",
@@ -182,7 +198,7 @@ for i, (p, a, b, x, y) in enumerate(caps):
     flt.append(f"[{last}][c{i}]overlay={x}:{y}:enable='between(t,{a:.2f},{b:.2f})'[w{i}]")
     last = f"w{i}"
 flt.append(f"[{last}]fps={FPS},format=yuv420p[vout]")
-flt.append(f"[1:a]asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},aresample=48000[aout]")
+flt.append(f"[5:a]atrim=start={lead_a:.3f},asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},aresample=48000,aformat=channel_layouts=stereo[aout]")
 (OUT / "filter_main.txt").write_text(";\n".join(flt))
 subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                 "-/filter_complex", str(OUT / "filter_main.txt"), "-map", "[vout]", "-map", "[aout]",
@@ -199,6 +215,7 @@ def card(path, draw_fn):
 
 def intro(d, img):
     d.text((160, 120), "Twelveone", font=font(30, 700), fill=BLUE)
+    d.text((160, 250), "워치가 먼저 알아챘다면,", font=font(46, 600), fill=SUB)
     d.text((152, 330), "케어드라이브", font=font(150, 800), fill=INK)
     d.text((160, 530), "워치가 아는 내 컨디션, 차가 먼저 챙겨요", font=font(54, 700), fill=SUB)
     d.text((160, 860), "Pleos Connect 에뮬레이터 2.1.0의 화면과 소리를 그대로 녹화했어요", font=font(28, 500), fill=MUTE)
@@ -212,7 +229,7 @@ def outro(d, img):
             ("멈추면", "이유에 맞는 다음 행동과 보호자 알림, 119를 안내해요")]
     for i, (k, v) in enumerate(rows):
         y = 360 + i * 120
-        d.rounded_rectangle((160, y, 340, y + 70), 35, fill=(232, 243, 255))
+        d.rounded_rectangle((160, y, 340, y + 70), 35, fill=(25, 50, 92))
         d.text((250 - text_w(d, k, font(32, 700)) / 2, y + 14), k, font=font(32, 700), fill=BLUE)
         d.text((380, y + 10), v, font=font(44, 700), fill=INK)
     d.text((160, 790), "케어드라이브는 진단하지 않아요. 위급하면 119가 먼저예요.", font=font(30, 600), fill=SUB)
@@ -228,16 +245,42 @@ for name, secs in (("intro", INTRO), ("outro", OUTRO)):
                     "-vf", f"fps={FPS},format=yuv420p", "-c:v", "libx264", "-crf", "18",
                     "-c:a", "aac", "-shortest", str(OUT / f"{name}.mp4")], check=True)
 
-# Crossfade intro → main → outro.
-o1 = INTRO - XF
-o2 = o1 + dur - XF
-xf = (f"[0:v][1:v]xfade=transition=fade:duration={XF}:offset={o1:.2f}[x1];"
-      f"[x1][2:v]xfade=transition=fade:duration={XF}:offset={o2:.2f}[v];"
-      f"[0:a][1:a]acrossfade=d={XF}[a1];[a1][2:a]acrossfade=d={XF}[a]")
-subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(OUT / "intro.mp4"), "-i", str(OUT / "main.mp4"), "-i", str(OUT / "outro.mp4"),
-                "-filter_complex", xf, "-map", "[v]", "-map", "[a]",
+# Optional AI opening: cover the generator's sparkle mark, label it as staged, then crossfade on.
+parts = []
+if OPENING.exists():
+    lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lab)
+    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
+    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
+    ld.text((64, H - 150), "운전 중, 이런 순간이 온다면", font=font(54, 800), fill=(255, 255, 255))
+    lab.save(OUT / "opening_label.png")
+    op_len = media_len(OPENING)
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OPENING),
+                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(OUT / "opening_label.png"),
+                    "-filter_complex",
+                    "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,7.6)'[o];"
+                    "[1:v]format=rgba,fade=t=out:st=6.6:d=0.6:alpha=1[l];"
+                    "[o][l]overlay=0:0:enable='lt(t,7.4)',format=yuv420p[v];"
+                    "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
+                    "-map", "[v]", "-map", "[a]", "-t", f"{op_len:.2f}", "-c:v", "libx264", "-crf", "18",
+                    "-c:a", "aac", str(OUT / "opening.mp4")], check=True)
+    parts.append((OUT / "opening.mp4", op_len))
+parts += [(OUT / "intro.mp4", INTRO), (OUT / "main.mp4", dur), (OUT / "outro.mp4", OUTRO)]
+
+# Crossfade every part into the next.
+ins, fv, fa, off = [], [], [], 0.0
+for i, (p, _) in enumerate(parts):
+    ins += ["-i", str(p)]
+lv, la = "0:v", "0:a"
+for i in range(1, len(parts)):
+    off += parts[i - 1][1] - XF
+    fv.append(f"[{lv}][{i}:v]xfade=transition=fade:duration={XF}:offset={off:.2f}[x{i}]")
+    fa.append(f"[{la}][{i}:a]acrossfade=d={XF}[y{i}]")
+    lv, la = f"x{i}", f"y{i}"
+subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins,
+                "-filter_complex", ";".join(fv + fa), "-map", f"[{lv}]", "-map", f"[{la}]",
                 "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                 str(OUT / "caredrive-demo.mp4")], check=True)
-print(OUT / "caredrive-demo.mp4", f"{INTRO + dur + OUTRO - 2 * XF:.1f}s", f"{len(caps)} captions")
+total = sum(l for _, l in parts) - XF * (len(parts) - 1)
+print(OUT / "caredrive-demo.mp4", f"{total:.1f}s", f"{len(caps)} captions", f"lead v={lead_v:.2f} a={lead_a:.2f}")

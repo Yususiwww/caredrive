@@ -49,8 +49,10 @@ class CheckinEngineTest {
         assertTrue(Effect.AddRestStop in help)
         assertTrue(help.calls().isEmpty())
         assertTrue(e.checkin!!.helpRequested)
-        // Still driving: nothing more, however long.
-        assertTrue(e.run(6, 120, Level.L2_WARNING, Reason.HR_HIGH).calls().isEmpty())
+        // Still driving and steering now and then: no ladder, however long.
+        val driving = (6..120).flatMap { t -> if (t % 30 == 0) e.onDriverInput(t * s); e.update(t * s, Level.L2_WARNING, Reason.HR_HIGH, false) }
+        assertTrue(driving.calls().isEmpty())
+        assertTrue(e.checkin!!.helpRequested)
         // Gear P: contact guardian + 119 (dialer).
         val stop = e.update(121 * s, Level.L3_STOPPED, Reason.HR_HIGH, parked = true)
         assertEquals(listOf(Effect.Call(listOf("contacts", "119_dial"), Reason.HR_HIGH, "call")), stop.calls())
@@ -70,6 +72,52 @@ class CheckinEngineTest {
         assertTrue(e.checkin!!.helpRequested)
         assertTrue(Cue.CARDIAC_HELP in at30.cues())
         assertTrue(Effect.Log(Ask.CARDIAC_CHECK, "none") in at30)
+    }
+
+    @Test fun cardiacHelp_thenNoAnswerNoInput60s_whileMoving_runsTheNoPulseLadder() {
+        val e = CheckinEngine()
+        e.update(0, Level.L2_WARNING, Reason.IHRN_NEW, false)
+        e.run(1, 30, Level.L2_WARNING, Reason.IHRN_NEW) // no answer: help assumed at 30 s
+        assertTrue(e.checkin!!.helpRequested)
+        assertTrue(e.run(31, 89, Level.L2_WARNING, Reason.IHRN_NEW).calls().isEmpty())
+        val at90 = e.run(90, 90, Level.L2_WARNING, Reason.IHRN_NEW)
+        assertTrue(e.checkin!!.escalated)
+        assertTrue(at90.any { it is Effect.Chime && it.beeps == 3 })
+        // Same ladder as no pulse: pre-alert (no input → 30 s), then guardian call + 119 dialer at 180 s.
+        val ladder = e.run(91, 90 + 180, Level.L2_WARNING, Reason.IHRN_NEW)
+        assertEquals(listOf("pre_alert", "call"), ladder.calls().map { it.stage })
+        assertEquals(Effect.Call(listOf("contacts", "119_dial"), Reason.IHRN_NEW, "call"), ladder.calls().last())
+        assertEquals(Reason.IHRN_NEW, e.contacting?.reason)
+    }
+
+    @Test fun cardiacLadder_stoppedByInput_orAnswer() {
+        val e = CheckinEngine()
+        e.update(0, Level.L2_WARNING, Reason.HR_HIGH, false)
+        e.answer(1 * s, Ask.CARDIAC_CHECK, true, parked = false)
+        e.run(2, 61, Level.L2_WARNING, Reason.HR_HIGH)
+        assertTrue(e.checkin!!.escalated)
+        e.onDriverInput(70 * s) // brake
+        e.run(70, 70, Level.L2_WARNING, Reason.HR_HIGH)
+        assertFalse(e.checkin!!.escalated)
+        assertTrue(e.checkin!!.helpRequested)
+        // Quiet again for 60 s → ladder again; then "괜찮아요" ends it.
+        e.run(71, 130, Level.L2_WARNING, Reason.HR_HIGH)
+        assertTrue(e.checkin!!.escalated)
+        val ok = e.answer(131 * s, Ask.CARDIAC_CHECK, false, parked = false)
+        assertNull(e.checkin)
+        assertTrue(Effect.AmbientRed(false) in ok)
+        assertTrue(e.run(132, 400, Level.L2_WARNING, Reason.HR_HIGH).calls().isEmpty())
+    }
+
+    @Test fun cardiacLadder_gearP_stillContactsAtOnce() {
+        val e = CheckinEngine()
+        e.update(0, Level.L2_WARNING, Reason.HR_HIGH, false)
+        e.answer(1 * s, Ask.CARDIAC_CHECK, true, parked = false)
+        e.run(2, 70, Level.L2_WARNING, Reason.HR_HIGH)
+        assertTrue(e.checkin!!.escalated)
+        val stop = e.update(71 * s, Level.L3_STOPPED, Reason.HR_HIGH, parked = true)
+        assertEquals("call", stop.calls().single().stage)
+        assertNotNull(e.contacting)
     }
 
     @Test fun cardiacOk_keepsL2Flow_andSnoozes15Min() {
@@ -96,31 +144,72 @@ class CheckinEngineTest {
 
     // --- NO_PULSE --------------------------------------------------------------------------------
 
-    @Test fun noPulse_asksAtOnce_preAlertAt60_callAt180() {
+    @Test fun noPulse_noCarInput_preAlertAt30_callAt180() {
         val e = CheckinEngine()
         val start = e.onPulse(0, PulseState.ABSENT)
         assertTrue(start.any { it is Effect.Chime && it.beeps == 3 })
         assertTrue(Effect.AmbientRed(true) in start)
         assertEquals(180, e.checkin?.totalSeconds)
 
-        val first = e.run(1, 59)
-        assertEquals(2, first.cues().count { it == Cue.NO_PULSE_ASK }) // re-asked at 20 s and 40 s
+        val first = e.run(1, 29)
+        assertEquals(1, first.cues().count { it == Cue.NO_PULSE_ASK }) // re-asked at 20 s
         assertTrue(first.calls().isEmpty())
 
-        val at60 = e.run(60, 60)
-        assertEquals(listOf(Effect.Call(listOf("contacts"), Reason.NO_PULSE, "pre_alert")), at60.calls())
+        // No steering or brake at all: the guardian hears at 30 s, not 60 s.
+        val at30 = e.run(30, 30)
+        assertEquals(listOf(Effect.Call(listOf("contacts"), Reason.NO_PULSE, "pre_alert")), at30.calls())
         assertTrue(e.checkin!!.preAlerted)
-        assertEquals(120, e.checkin!!.secondsLeft)
+        assertEquals(150, e.checkin!!.secondsLeft)
 
-        val mid = e.run(61, 179)
+        val mid = e.run(31, 179)
         assertTrue(mid.calls().isEmpty())
-        assertTrue(Cue.NO_PULSE_ASK !in mid.cues()) // the 60 s announcement is not talked over
+        assertTrue(Cue.NO_PULSE_ASK !in mid.cues()) // the pre-alert announcement is not talked over
 
         val at180 = e.run(180, 180, parked = true)
         assertEquals(listOf(Effect.Call(listOf("contacts", "119_dial"), Reason.NO_PULSE, "call")), at180.calls())
         assertTrue(Effect.CabinLight(true) in at180)
         assertEquals(Reason.NO_PULSE, e.contacting?.reason)
         assertNull(e.checkin)
+    }
+
+    @Test fun noPulse_driverInput_pausesTimer_speaksOnce_preAlertStays60() {
+        val e = CheckinEngine()
+        e.onPulse(0, PulseState.ABSENT)
+        e.run(1, 10)
+        assertEquals(170, e.checkin!!.secondsLeft)
+        e.onDriverInput(10 * s) // steering at 10 s
+        val paused = e.run(11, 30)
+        assertTrue(e.checkin!!.paused)
+        assertEquals(listOf(Cue.NO_PULSE_DRIVER_INPUT), paused.cues()) // spoken once, no re-ask while paused
+        assertTrue(Effect.Log(Ask.NO_PULSE, "driver_input") in paused)
+        assertTrue(paused.calls().isEmpty())
+        assertEquals(170, e.checkin!!.secondsLeft) // paused, not cancelled
+        assertEquals(Ask.NO_PULSE, e.checkin!!.ask)
+
+        // Brake press keeps it paused; a second input does not speak again.
+        e.onDriverInput(25 * s)
+        assertTrue(Cue.NO_PULSE_DRIVER_INPUT !in e.run(31, 45).cues())
+        // 20 s after the last input the timer runs again, from where it stopped.
+        e.run(46, 46)
+        assertFalse(e.checkin!!.paused)
+        // There was input during the check, so the pre-alert stays at 60 s of counted time.
+        val before = e.run(47, 94) // counted time reaches 59 s
+        assertTrue(before.calls().isEmpty())
+        val at60 = e.run(95, 96)
+        assertEquals("pre_alert", at60.calls().single().stage)
+    }
+
+    @Test fun noPulse_onlyInputWhileTheCheckIsOpen_counts() {
+        // Braking to a stop just before the watch lost the pulse says nothing about the driver now.
+        val e = CheckinEngine()
+        e.onDriverInput(0)
+        e.onPulse(5 * s, PulseState.ABSENT)
+        e.update(6 * s, Level.L0_NORMAL, Reason.NONE, false)
+        assertFalse(e.checkin!!.paused)
+        assertTrue(e.run(7, 35).calls().single().stage == "pre_alert") // still the no-input 30 s pre-alert
+        e.onDriverInput(36 * s)
+        e.update(37 * s, Level.L0_NORMAL, Reason.NONE, false)
+        assertTrue(e.checkin!!.paused)
     }
 
     @Test fun noPulse_whileDriving_noCabinLight() {

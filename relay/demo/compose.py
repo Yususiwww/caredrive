@@ -9,6 +9,7 @@ Layout (1920x1080, light studio backdrop like the app):
   bottom  what the car just said, as a subtitle pill
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,11 +23,12 @@ W, H, FPS = 1920, 1080, 30
 CAR = (40, 176, 1472, 828)            # x, y, w, h
 PHONE_H = 828
 PHONE = (W - 40 - round(PHONE_H * 860 / 1864), 176)
-INTRO, OUTRO, XF = 4.0, 5.5, 0.6     # seconds; XF = crossfade
+INTRO, OUTRO, XF = 7.5, 7.0, 0.6     # seconds; XF = crossfade
 
 # Dark cockpit palette, matching the app's design D.
 INK, SUB, MUTE, BLUE = (242, 244, 246), (176, 184, 193), (139, 149, 161), (49, 130, 246)
 OPENING = ROOT / "docs/demo/ai-scenes/opening.mp4"  # AI-made staged opening (optional)
+EMERGENCY = ROOT / "docs/demo/ai-scenes/emergency.mp4"  # AI-made emergency sequence, inserted before chapter 5
 
 # What each scenario chapter shows, and what was fed in to make it happen.
 CHAPTERS = [
@@ -38,6 +40,8 @@ CHAPTERS = [
      "넣은 값: 심박 112 bpm 5분 지속 (시간 감기)  ·  '좀 그래요' → 폰이 플레이리스트를 열어요"),
     ("졸음 · 핸들 신호로 알아채요",
      "차량 핸들 신호: 10초 넘게 조향 없음 → 큰 수정 조향  +  짧은 수면 = 졸음 점수 45 → '쉬어 갈게요'"),
+    ("정체 · 멈춰 있으면 먼저 물어요",
+     "차량 신호: 기어 D · 속도 0 · 핸들·브레이크 입력 없음 2분 (시연: 2분을 20배 빠르게)  ·  '괜찮아' → 다시 출발"),
     ("심장 이상 · 비상등 · 정차 · 연락",
      "넣은 값: 부정맥 알림 (시뮬레이션)  ·  '도움이 필요해요' → 실내 조명 빨강 · 정차(P)하면 보호자 전화 · 119 연결 준비"),
     ("맥박 없음 · 3분 안에 대답이 없으면",
@@ -193,19 +197,27 @@ for i, e in enumerate(tl.get("events", [])):
     a = max(0, (e["t"] - t0) / 1000)
     caps.append((p, a, a + 4.5, CAR[0] + CAR[2] - w - 24, CAR[1] + 24))
 
-# Playlist scene: when the car says it will play music, play two public-domain pieces (synthesized
-# from the notes by demo/music.py) for ~10 s each, quietly under the car's own voice.
+# Playlist scene: when the car says it will play music, play two free-licence recordings for ~10 s each,
+# quietly under the car's own voice. Files live in docs/demo/music (downloaded from Wikimedia Commons):
+#   Gymnopédie No. 1 (Satie) — CC0;  Canon in D (Pachelbel), performed by Kevin MacLeod — CC BY 3.0.
+# If they are missing, demo/music.py synthesizes the same pieces from the notes.
+MUSIC_DIR = ROOT / "docs/demo/music"
+RECORDINGS = [(MUSIC_DIR / "gymnopedie_cc0.ogg", 13.0, "♪ 내 플레이리스트 1 · 사티 〈짐노페디 1번〉"),
+              (MUSIC_DIR / "canon_macleod_ccby.ogg", 0.0, "♪ 내 플레이리스트 2 · 파헬벨 〈캐논〉")]
+MUSIC_CREDIT = "음악: Satie 〈Gymnopédie No.1〉 (CC0, Wikimedia Commons) · Pachelbel 〈Canon in D〉 Kevin MacLeod (incompetech.com), CC BY 3.0"
 music = []
 play = next((s_ for s_ in tl["speaks"] if "노래" in s_["text"]), None)
 if play:
-    subprocess.run([sys.executable, str(Path(__file__).parent / "music.py"), str(OUT)], check=True,
-                   capture_output=True)
+    if not all(f.exists() for f, _, _ in RECORDINGS):
+        subprocess.run([sys.executable, str(Path(__file__).parent / "music.py"), str(OUT)], check=True,
+                       capture_output=True)
+        RECORDINGS = [(OUT / "gymnopedie.wav", 0.0, RECORDINGS[0][2]), (OUT / "canon.wav", 0.0, RECORDINGS[1][2])]
+        MUSIC_CREDIT = "음악: Satie·Pachelbel (퍼블릭 도메인, 악보에서 합성)"
     m0 = (play["t"] - t0) / 1000 + 3.2
-    for k, (wav, label) in enumerate((("gymnopedie.wav", "♪ 내 플레이리스트 1 · 사티 〈짐노페디 1번〉"),
-                                      ("canon.wav", "♪ 내 플레이리스트 2 · 파헬벨 〈캐논〉"))):
+    for k, (wav, offset, label) in enumerate(RECORDINGS):
         start = m0 + 10.0 * k
         if start < dur - 2:
-            music.append((OUT / wav, start))
+            music.append((wav, start, offset))
             p_, w_ = event_img(100 + k, label)
             caps.append((p_, start, min(dur, start + 9.5), CAR[0] + 24, CAR[1] + CAR[3] - 52 - 24))
 
@@ -217,7 +229,7 @@ inputs = ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "bg.png"),
           "-i", str(AUDIO)]
 for p, *_ in caps:
     inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(p)]
-for wav, _ in music:
+for wav, *_ in music:
     inputs += ["-i", str(wav)]
 base = 6
 
@@ -241,11 +253,12 @@ car_a = (f"[5:a]atrim=start={lead_a:.3f},asetpts=PTS-STARTPTS,atrim=0:{dur:.2f},
 if music:
     flt.append(car_a + "[acar]")
     mix = ["[acar]"]
-    for k, (wav, start) in enumerate(music):
+    for k, (wav, start, offset) in enumerate(music):
         idx = base + len(caps) + k
         ms = int(start * 1000)
-        flt.append(f"[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,atrim=0:10,"
-                   f"afade=t=in:d=0.8,afade=t=out:st=8.8:d=1.2,volume=0.32,adelay={ms}|{ms}[m{k}]")
+        flt.append(f"[{idx}:a]aresample=48000,aformat=channel_layouts=stereo,"
+                   f"atrim=start={offset}:end={offset + 10},asetpts=PTS-STARTPTS,loudnorm=I=-26:TP=-3,"
+                   f"afade=t=in:d=0.8,afade=t=out:st=8.8:d=1.2,adelay={ms}|{ms}[m{k}]")
         mix.append(f"[m{k}]")
     flt.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[aout]")
 else:
@@ -285,6 +298,8 @@ def outro(d, img):
         d.text((380, y + 10), v, font=font(44, 700), fill=INK)
     d.text((160, 790), "케어드라이브는 진단하지 않아요. 위급하면 119가 먼저예요.", font=font(30, 600), fill=SUB)
     d.text((160, 900), "github.com/Yususiwww/caredrive  ·  Twelveone", font=font(30, 600), fill=MUTE)
+    if music:
+        d.text((160, 990), MUSIC_CREDIT, font=font(20, 500), fill=MUTE)
 
 
 card(OUT / "intro.png", intro)
@@ -316,7 +331,66 @@ if OPENING.exists():
                     "-map", "[v]", "-map", "[a]", "-t", f"{op_len:.2f}", "-c:v", "libx264", "-crf", "18",
                     "-c:a", "aac", str(OUT / "opening.mp4")], check=True)
     parts.append((OUT / "opening.mp4", op_len))
-parts += [(OUT / "intro.mp4", INTRO), (OUT / "main.mp4", dur), (OUT / "outro.mp4", OUTRO)]
+parts += [(OUT / "intro.mp4", INTRO)]
+
+# Optional AI emergency sequence (driver in pain → car sends a signal → guardian's phone → ambulance),
+# cut into the demo right before the cardiac chapter (found by its label, not its position).
+split = None
+chs_t = [(c["t"] - t0) / 1000 for c in tl["chapters"]]
+CARDIAC_I = next((i for i, c in enumerate(tl["chapters"]) if "심장" in c["label"]), None)
+if EMERGENCY.exists() and CARDIAC_I is not None:
+    split = max(0.0, chs_t[CARDIAC_I] - 0.4)
+    em_len = media_len(EMERGENCY)
+    lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lab)
+    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
+    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
+    lab.save(OUT / "emergency_label.png")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(EMERGENCY),
+                    "-loop", "1", "-t", f"{em_len:.2f}", "-i", str(OUT / "emergency_label.png"),
+                    "-filter_complex",
+                    "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,9.6)'[o];"
+                    "[o][1:v]overlay=0:0:enable='lt(t,14)',format=yuv420p[v];"
+                    "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
+                    "-map", "[v]", "-map", "[a]", "-t", f"{em_len:.2f}", "-c:v", "libx264", "-crf", "18",
+                    "-c:a", "aac", str(OUT / "emergency.mp4")], check=True)
+    for name, a, b in (("main_a", 0.0, split), ("main_b", split, dur)):
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OUT / "main.mp4"),
+                        "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-c:v", "libx264", "-crf", "18",
+                        "-c:a", "aac", "-b:a", "192k", str(OUT / f"{name}.mp4")], check=True)
+    parts += [(OUT / "main_a.mp4", split), (OUT / "emergency.mp4", em_len), (OUT / "main_b.mp4", dur - split)]
+else:
+    parts += [(OUT / "main.mp4", dur)]
+parts += [(OUT / "outro.mp4", OUTRO)]
+
+# Narration (natural Korean male voice). Free Microsoft Edge neural voice via the `edge-tts` package;
+# set EDGE_TTS to its executable. Lines are placed at the start of each part/chapter, before the car speaks.
+# Calm documentary tone, 합니다체. Numbers are written as they should be read ("일일구", not "119").
+VOICE = os.environ.get("NARRATOR_VOICE", "ko-KR-InJoonNeural")
+VOICE_ARGS = os.environ.get("NARRATOR_ARGS", "--rate=-8% --pitch=-4Hz").split()  # picked by the team: sample A
+NARRATION_OPENING = "운전 중 몸에 이상이 오면, 스스로 도움을 청하기 어렵습니다. 쓰러지기 전에 세우게 하고, 대답이 없으면 대신 알립니다."
+NARRATION_INTRO = "케어드라이브는 워치의 몸 상태와 차의 운전 상태를 함께 봅니다."
+NARRATION_EMERGENCY = "위급한 순간, 차가 보낸 신호는 가족에게 먼저 닿습니다."
+NARRATION_CHAPTERS = [
+    "출발 전, 지난밤 수면으로 오늘의 휴식 간격을 정합니다.",
+    "주행 중에는 차의 기어와 속도를 함께 읽습니다.",
+    "긴장이 이어지면, 차가 먼저 묻습니다.",
+    "핸들 움직임과 수면 정보를 합쳐 졸음을 알아챕니다.",
+    "기어를 넣은 채 오래 멈춰 있으면, 먼저 말을 겁니다.",
+    "심장 박동이 이상하면, 먼저 차를 세우도록 안내합니다.",
+    "대답이 없으면 보호자에게 전화하고, 일일구 연결을 준비합니다.",
+]
+NARRATION_OUTRO = "케어드라이브. 몸과 차를 함께 봅니다."
+
+
+def narrate(text, path):
+    exe = os.environ.get("EDGE_TTS")
+    if not exe:
+        return None
+    subprocess.run([exe, "--voice", VOICE, *VOICE_ARGS, "--text", text, "--write-media", str(path)],
+                   check=True, capture_output=True)
+    return path
+
 
 # Crossfade every part into the next.
 ins, fv, fa, off = [], [], [], 0.0
@@ -334,4 +408,68 @@ subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins,
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                 str(OUT / "caredrive-demo.mp4")], check=True)
 total = sum(l for _, l in parts) - XF * (len(parts) - 1)
+
+# Absolute start of each part in the final film, then lay the narration over it.
+starts, acc = [], 0.0
+for _, l in parts:
+    starts.append(acc)
+    acc += l - XF
+names = [p.stem for p, _ in parts]
+cues = []
+if "opening" in names:
+    cues.append((starts[names.index("opening")] + 0.8, NARRATION_OPENING))
+cues.append((starts[names.index("intro")] + 0.6, NARRATION_INTRO))
+def film_time(t_main):
+    """Position in the final film of time t_main inside the recorded demo."""
+    if split is None:
+        return starts[names.index("main")] + t_main
+    if t_main < split:
+        return starts[names.index("main_a")] + t_main
+    return starts[names.index("main_b")] + (t_main - split)
+
+
+if split is not None:
+    cues.append((starts[names.index("emergency")] + 3.4, NARRATION_EMERGENCY))
+for i, c in enumerate(tl["chapters"][: len(NARRATION_CHAPTERS)]):
+    cues.append((film_time(max(0.0, (c["t"] - t0) / 1000)) + 0.2 + (0.5 if split is not None and i == CARDIAC_I else 0),
+                 NARRATION_CHAPTERS[i]))
+cues.append((starts[names.index("outro")] + 0.5, NARRATION_OUTRO))
+files = [(narrate(text, OUT / f"narr{i}.mp3"), at) for i, (at, text) in enumerate(cues)]
+files = [(f, at) for f, at in files if f]
+
+# Never talk over the car: car speech windows in film time (chimes + voice, ~6 Korean syllables/s).
+busy = sorted((film_time(max(0.0, (sp["t"] - t0) / 1000)) - 0.6,
+               film_time(max(0.0, (sp["t"] - t0) / 1000)) + len(sp["text"]) / 6.0 + 1.0) for sp in speaks)
+placed, kept = [], []
+for f, at in sorted(files, key=lambda x: x[1]):
+    d = media_len(f)
+    start = at
+    for _ in range(6):
+        hit = next(((a, b) for a, b in busy + placed if start < b and start + d > a), None)
+        if not hit:
+            break
+        start = hit[1] + 0.3          # wait until the car (or previous line) has finished
+    else:
+        print("narration dropped (no gap):", f.name)
+        continue
+    placed.append((start, start + d))
+    kept.append((f, start))
+files = kept
+if files:
+    final = OUT / "caredrive-demo.mp4"
+    tmp = OUT / "caredrive-demo-nonarr.mp4"
+    final.replace(tmp)
+    ins = ["-i", str(tmp)]
+    flt, labels = [], ["[0:a]volume=0.85[base]"]
+    for k, (f, at) in enumerate(files):
+        ins += ["-i", str(f)]
+        ms = int(at * 1000)
+        flt.append(f"[{k + 1}:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.6,adelay={ms}|{ms}[n{k}]")
+    mix = "[base]" + "".join(f"[n{k}]" for k in range(len(files)))
+    graph = ";".join(labels + flt + [f"{mix}amix=inputs={len(files) + 1}:duration=first:normalize=0[a]"])
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins, "-filter_complex", graph,
+                    "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart", str(final)], check=True)
+    (OUT / "narration.json").write_text(json.dumps([{"at": round(at, 2), "text": t} for at, t in cues],
+                                                   ensure_ascii=False, indent=1))
 print(OUT / "caredrive-demo.mp4", f"{total:.1f}s", f"{len(caps)} captions", f"lead v={lead_v:.2f} a={lead_a:.2f}")

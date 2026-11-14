@@ -23,6 +23,8 @@ enum class Reason {
     NO_PULSE,
     /** Drowsiness score (sleep debt, time driven, time of day, HR drop, steering) above the limit. */
     DROWSY,
+    /** In gear but not moving, no driver input, and no answer to the "정체 확인" question. */
+    STATIONARY,
 }
 
 /** A question the car is asking aloud and on screen, waiting for the driver's answer. */
@@ -35,6 +37,8 @@ enum class Ask {
     STRESS_TALK,
     /** "졸음이 올 수 있어요. 창문을 조금 열까요?" → [쉬어 갈게요] [괜찮아요] */
     DROWSY,
+    /** "정체 구간인가 봐요. 노래 틀어 드릴까요?" → [틀어 줘] [괜찮아]; no answer in 30 s escalates like NO_PULSE */
+    STATIONARY,
 }
 
 /** Open question on screen. [secondsLeft] counts down to the next escalation (null = no timer). */
@@ -48,6 +52,10 @@ data class Checkin(
     val preAlerted: Boolean = false,
     /** CARDIAC_CHECK only: driver asked for help (or did not answer in 30 s). Waiting for gear P to contact. */
     val helpRequested: Boolean = false,
+    /** NO_PULSE only: steering/brake input in the last 20 s, so the timer is paused (likely a watch sensor problem). */
+    val paused: Boolean = false,
+    /** STATIONARY only: no answer in 30 s, now counting down to the call like NO_PULSE (any answer cancels). */
+    val escalated: Boolean = false,
 )
 
 /** Watch pulse reading. Only ABSENT asks the driver; OFF_WRIST and WEAK never escalate. */

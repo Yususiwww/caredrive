@@ -23,6 +23,11 @@ data class Message(val title: String, val body: String, val note: String? = null
     /** Title and body as one utterance, also used when the driver asks for it (mood pick). */
     fun sayAloud() = listOf(title, body).filter { it.isNotBlank() }.joinToString(" ") { line ->
         line.replace("\n", " ").let { if (it.endsWith("?") || it.endsWith(".")) it else "$it." }
+    }.let(::spoken)
+
+    companion object {
+        /** Screen text → what the TTS should say. The car voice reads "119" as "백십구"; Koreans say "일일구". */
+        fun spoken(text: String) = text.replace("119", "일일구")
     }
 }
 
@@ -94,7 +99,7 @@ object Messages {
     }
 
     private fun warning(s: CareState): Message {
-        if (s.reason == Reason.NO_PULSE) return cue(Cue.NO_PULSE_ASK)
+        if (s.reason == Reason.NO_PULSE || s.reason == Reason.STATIONARY) return cue(Cue.NO_PULSE_ASK)
         // Drowsiness at 60+: the nearest rest stop is added as a waypoint right away.
         if (s.reason == Reason.DROWSY) return Message("졸음쉼터에서 쉬어 가요", "가까운 쉼터를 경유지로 넣었어요", "차는 직접 안전한 곳에 세워 주세요", spoken = true)
         val ask = "휴게소로 안내할까요?"
@@ -129,7 +134,7 @@ object Messages {
     }
 
     /** 119 call pending: the driver can still cancel (eCall pattern). */
-    fun emergency(secondsLeft: Int) = Message("${secondsLeft}초 뒤 119에 전화해요", "원하지 않으면 취소를 누르세요", spoken = true)
+    fun emergency(secondsLeft: Int) = Message("${secondsLeft}초 뒤 119 연결 화면을 열어요", "원하지 않으면 취소를 누르세요", spoken = true)
 
     fun dataLine(state: CareState): String? = when (state.data) {
         DataState.LIVE -> null
@@ -145,14 +150,25 @@ object Messages {
         Ask.NO_PULSE -> listOf("괜찮아요")
         Ask.STRESS_TALK -> listOf("좀 그래요", "괜찮아요")
         Ask.DROWSY -> listOf("쉬어 갈게요", "괜찮아요")
+        Ask.STATIONARY -> listOf("틀어 줘", "괜찮아")
     }
 
     /** What the screen shows (and the voice says) while [c] is open. */
     fun forCheckin(c: Checkin): Message = when (c.ask) {
-        Ask.CARDIAC_CHECK -> cue(if (c.helpRequested) Cue.CARDIAC_HELP else Cue.CARDIAC_ASK)
-        Ask.NO_PULSE -> cue(if (c.preAlerted) Cue.NO_PULSE_PRE_ALERT else Cue.NO_PULSE_ASK)
+        Ask.CARDIAC_CHECK -> cue(when {
+            c.helpRequested -> Cue.CARDIAC_HELP
+            // Still moving with no answer or input: the no-pulse countdown, with the two cardiac buttons to stop it.
+            c.escalated && c.preAlerted -> Cue.NO_PULSE_PRE_ALERT
+            c.escalated -> Cue.NO_PULSE_ASK
+            else -> Cue.CARDIAC_ASK
+        })
+        Ask.NO_PULSE -> cue(when { c.paused -> Cue.NO_PULSE_DRIVER_INPUT; c.preAlerted -> Cue.NO_PULSE_PRE_ALERT; else -> Cue.NO_PULSE_ASK })
         Ask.STRESS_TALK -> cue(Cue.STRESS_ASK)
         Ask.DROWSY -> cue(Cue.DROWSY_ASK)
+        // No answer: the same countdown as no pulse.
+        Ask.STATIONARY -> if (!c.escalated) cue(Cue.STATIONARY_ASK) else cue(when {
+            c.paused -> Cue.NO_PULSE_DRIVER_INPUT; c.preAlerted -> Cue.NO_PULSE_PRE_ALERT; else -> Cue.NO_PULSE_ASK
+        })
     }
 
     fun contacting(c: Contacting) = cue(Cue.CONTACTING)
@@ -160,7 +176,7 @@ object Messages {
     /** Contacting checklist rows. 119 is never dialled by an app: the phone opens its dialer with 119 filled in. */
     fun contactLines(c: Contacting): List<String> = listOfNotNull(
         "보호자 전화".takeIf { c.contacts },
-        "119 연결 준비".takeIf { c.emergency119 },
+        "119 연결 준비됨(누르면 연결)".takeIf { c.emergency119 },
     )
 
     const val HAZARD_ON = "비상등 켜짐"
@@ -168,11 +184,12 @@ object Messages {
 
     fun cue(c: Cue): Message = when (c) {
         Cue.CARDIAC_ASK -> Message("심장 박동이 평소와 달라요", "괜찮으세요?", spoken = true)
-        Cue.CARDIAC_HELP -> Message("비상등을 켜고 세워 주세요", "안전한 곳에 멈추면 연락할게요", "갓길이나 휴게소에 세워 주세요", spoken = true)
+        Cue.CARDIAC_HELP -> Message("비상등을 켜고 세워 주세요", "멈추면 보호자에게 전화할게요", "갓길이나 휴게소에 세워 주세요", spoken = true)
         Cue.CARDIAC_OK -> Message("알겠어요", "휴게소로 안내할까요?", spoken = true)
-        Cue.CONTACTING, Cue.NO_PULSE_CALL -> Message("보호자에게 전화하고 있어요", "119 연결도 준비했어요", "원하지 않으면 취소를 누르세요", spoken = true)
-        Cue.NO_PULSE_ASK -> Message("괜찮으세요?", "대답해 주세요", "3분 동안 대답이 없으면 보호자와 119에 연락해요", spoken = true)
-        Cue.NO_PULSE_PRE_ALERT -> Message("2분 뒤 보호자와 119에 연락해요", "괜찮으면 '괜찮아요'를 눌러 주세요", "보호자에게 미리 알렸어요", spoken = true)
+        Cue.CONTACTING, Cue.NO_PULSE_CALL -> Message("보호자에게 전화하고 있어요", "119 연결도 준비했어요", "119는 폰에서 누르면 연결돼요 · 원하지 않으면 취소를 누르세요", spoken = true)
+        Cue.NO_PULSE_ASK -> Message("괜찮으세요?", "대답해 주세요", "3분 동안 대답이 없으면 보호자에게 전화하고 119 연결을 준비해요", spoken = true)
+        Cue.NO_PULSE_DRIVER_INPUT -> Message("운전 입력이 있어요", "워치 신호 문제일 수 있어요. 괜찮으면 '괜찮아요'를 눌러 주세요", "핸들이나 브레이크 입력이 있어 연락 타이머를 멈췄어요", spoken = true)
+        Cue.NO_PULSE_PRE_ALERT -> Message("곧 보호자에게 전화해요", "119 연결도 준비할게요. 괜찮으면 '괜찮아요'를 눌러 주세요", "보호자에게 위치와 함께 미리 알렸어요", spoken = true)
         Cue.NO_PULSE_CANCELLED, Cue.DROWSY_OK -> Message("알겠어요", "계속 지켜볼게요", spoken = true)
         Cue.PULSE_BACK -> Message("맥박이 다시 잡혀요", "계속 지켜볼게요", spoken = true)
         Cue.OFF_WRIST -> Message("워치를 다시 차 주세요", "", spoken = true)
@@ -182,6 +199,8 @@ object Messages {
         Cue.STRESS_OK -> Message("알겠어요", "4초 들이쉬고 6초 내쉬어 보세요", spoken = true)
         Cue.DROWSY_ASK -> Message("졸음이 올 수 있어요", "잠깐 쉬어 갈까요?", "실내를 시원하게 맞췄어요 · 창문을 조금 열어도 좋아요", spoken = true)
         Cue.DROWSY_REST -> Message("가까운 쉼터로 안내할게요", "도착하면 잠시 쉬어 가세요", spoken = true)
+        Cue.STATIONARY_ASK -> Message("정체 구간인가 봐요", "노래 틀어 드릴까요?", spoken = true)
+        Cue.STATIONARY_PLAY -> Message("노래 틀어 드릴게요", "", nowPlayingLine(CheckinEngine.PLAYLIST_NAME), spoken = true)
         Cue.CONTACT_CANCELLED -> Message("연락을 취소했어요", "", spoken = true)
     }
 }

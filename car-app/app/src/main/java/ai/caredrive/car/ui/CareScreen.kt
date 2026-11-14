@@ -112,7 +112,7 @@ private fun Body(state: CareState, actions: CareActions, compact: Boolean) {
         state.emergencyCountdown != null -> RailLayout(state, compact) {
             // Confirm first, cancel second (Pleos system popup order); at most two buttons.
             Stage(Messages.emergency(state.emergencyCountdown), compact) {
-                CareButton("지금 전화", ButtonKind.Danger, actions::call119Now, compact)
+                CareButton("지금 연결 화면", ButtonKind.Danger, actions::call119Now, compact)
                 CareButton("취소", ButtonKind.Secondary, actions::cancel119, compact)
             }
         }

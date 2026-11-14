@@ -79,7 +79,7 @@
   .item { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 8px 0; }
   .item dt, .item .label { color: var(--ink2); font-size: 1rem; }
   .item dd { margin: 0; text-align: right; font-weight: 600; }
-  .item dd.soft { color: var(--ink3); font-weight: 500; font-size: .9375rem; }
+  .item dd.soft, .item > span.soft { color: var(--ink3); font-weight: 500; font-size: .9375rem; text-align: right; }
   .label small { display: block; font-size: .8125rem; color: var(--ink3); margin-top: 2px; }
   output { font-weight: 700; font-size: 1.0625rem; color: var(--ink); text-align: right; white-space: nowrap; }
 
@@ -167,6 +167,9 @@
   #callCard { background: var(--danger-bg); }
   #callCard strong { color: var(--danger-ink); }
   #playCard strong { color: var(--accent-ink); }
+  .sms { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: var(--surface); }
+  .sms .sms-h { margin: 0 0 4px; font-size: .8125rem; font-weight: 600; color: var(--ink3); }
+  .sms #smsText { margin: 0; font-size: .875rem; line-height: 1.55; color: var(--ink); }
   .log { list-style: none; margin: 16px 0 0; padding: 0; }
   .log li { display: grid; grid-template-columns: 52px 1fr; gap: 4px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
   .log li:first-child { border-top: 0; }
@@ -212,6 +215,10 @@
   <section class="notice" id="callCard" aria-live="assertive">
     <strong id="callText"></strong>
     <p id="callNote"></p>
+    <div id="smsBox" class="sms" hidden>
+      <p class="sms-h">보호자에게 보낸 문자</p>
+      <p id="smsText"></p>
+    </div>
   </section>
   <section class="notice" id="playCard" aria-live="polite">
     <strong id="playText"></strong>
@@ -276,6 +283,8 @@
     <div class="list">
       <div class="item"><label class="label" for="guardianName">보호자 이름</label><input id="guardianName" type="text" value="엄마" autocomplete="off"></div>
       <div class="item"><label class="label" for="guardianPhone">보호자 번호</label><input id="guardianPhone" type="tel" value="010-0000-0000" autocomplete="off"></div>
+      <div class="item"><label class="label" for="carDesc">내 차<small>119에 알려 줄 차종·색</small></label><input id="carDesc" type="text" value="흰색 SUV" autocomplete="off"></div>
+      <div class="item"><span class="label">등록한 장소<small>이 근처에서는 정체 확인을 하지 않아요 (300m)</small></span><span class="soft">집 · 회사 (시연 값)</span></div>
       <hr class="divider">
       <div class="item"><label class="label" for="playlist">플레이리스트</label>
         <select id="playlist"><option>편안한 플레이리스트</option><option>좋아하는 노래</option><option>자연의 소리</option></select>
@@ -338,11 +347,11 @@
   const REASON = {
     NONE: '', HR_SUSTAINED: '심박 높음 지속', STRESS_HIGH: '스트레스 높음 지속', HR_HIGH: '심박 매우 높음', HR_LOW: '심박 매우 낮음',
     IHRN_NEW: '부정맥 알림', GLUCOSE_LOW: '저혈당', BREAK_DUE: '휴식 시간', BREAK_OVERDUE: '휴식 시간 초과',
-    NO_PULSE: '맥박 없음', DROWSY: '졸음',
+    NO_PULSE: '맥박 없음', DROWSY: '졸음', STATIONARY: '정차 중 응답 없음',
   };
-  const ASK = { CARDIAC_CHECK: '심장 확인 질문', NO_PULSE: '맥박 없음', STRESS_TALK: '긴장 대화', DROWSY: '졸음 질문' };
+  const ASK = { CARDIAC_CHECK: '심장 확인 질문', NO_PULSE: '맥박 없음', STRESS_TALK: '긴장 대화', DROWSY: '졸음 질문', STATIONARY: '정체 확인' };
   const ANSWER = {
-    help: '도움이 필요해요', ok: '괜찮아요', none: '대답 없음', rest: '쉬어 갈게요', play: '좀 그래요 · 음악 재생', pulse_back: '맥박이 다시 잡힘',
+    help: '도움이 필요해요', ok: '괜찮아요', none: '대답 없음', rest: '쉬어 갈게요', play: '좀 그래요 · 음악 재생', pulse_back: '맥박이 다시 잡힘', moved: '다시 출발함', none_moving: '주행 중 대답·입력 없음 · 연락 단계 시작', driver_input: '핸들·브레이크 입력 있음 · 워치 신호 문제 가능성 (타이머 멈춤)',
   };
 
   // Event log: newest first. Kept on this page only (a real phone app stores it with the health record).
@@ -362,7 +371,7 @@
     if (m.stage === 'pre_alert') {
       text = `보호자 ${guardian()}에게 미리 알림 문자 보냄`;
       note = `위치 포함 · ${note}`;
-      logEvent('보호자 미리 알림', `${why} · 1분 동안 대답 없음`);
+      logEvent('보호자 미리 알림', `${why} · 대답 없음`);
     } else if (m.stage === 'cancel') {
       text = '연락을 취소했어요';
       note = `보호자 ${guardian()}에게 괜찮다고 알렸어요 · 시연`;
@@ -377,6 +386,11 @@
     }
     $('callText').textContent = text;
     $('callNote').textContent = note;
+    // The car writes what the guardian needs for 119; the phone fills in the registered car.
+    if (m.script) {
+      $('smsText').textContent = m.script.replaceAll('[차종·색]', $('carDesc').value.trim() || '차종 미등록');
+      $('smsBox').hidden = false;
+    } else if (m.stage !== 'cancel') $('smsBox').hidden = true;
     $('callCard').classList.add('show');
     $('callCard').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -434,6 +448,8 @@
     systolicBp: +$('bp').value,
     baselineRmssd: +$('baseRmssd').value,
     mood: $('mood').value || null,
+    // Demo places (Seoul City Hall, Gangnam station): far from the emulator's Pangyo position on purpose.
+    places: [{ name: '집', lat: 37.5663, lon: 126.9779 }, { name: '회사', lat: 37.4979, lon: 127.0276 }],
   });
   const sendCondition = () => send({ type: 'condition', condition: condition() });
 

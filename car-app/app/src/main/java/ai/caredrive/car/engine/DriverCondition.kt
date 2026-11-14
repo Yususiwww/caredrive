@@ -29,6 +29,8 @@ data class DriverCondition(
     /** Personal resting HRV (RMSSD, ms) from the watch app; baseline for the live stress estimate. */
     val baselineRmssd: Int? = null,
     val mood: Mood? = null,
+    /** Registered places (home, work): no "정체 확인" within 300 m. */
+    val places: List<Place> = emptyList(),
 )
 
 enum class Grade { GOOD, FAIR, LOW }

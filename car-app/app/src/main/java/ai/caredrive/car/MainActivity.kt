@@ -72,6 +72,8 @@ class MainActivity : ComponentActivity() {
     private val checkins = CheckinEngine()
     private val drowsiness = Drowsiness()
     private val steering = SteeringMonitor()
+    private val stationary = ai.caredrive.car.engine.Stationary()
+    private var stationaryWasDue = false
     /** Wall-clock minute of the day when the app started; the simulated clock runs on from here (time-of-day drowsiness). */
     private val startClockMin = java.util.Calendar.getInstance().let { it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE) }
     private val main = Handler(Looper.getMainLooper())
@@ -124,7 +126,7 @@ class MainActivity : ComponentActivity() {
         override fun call119Now() = placeEmergencyCall()
         override fun cancel119() {
             if (state.emergencyCountdown == null) return
-            val reply = "119 전화를 취소했어요."
+            val reply = "119 연결을 취소했어요."
             car.speak(reply)
             state = state.copy(emergencyCountdown = null, lastEvent = reply)
         }
@@ -181,7 +183,11 @@ class MainActivity : ComponentActivity() {
             this,
             onEvent = { msg -> runOnUiThread { log("event: $msg"); state = state.copy(lastEvent = msg) } },
             onGear = { gear -> runOnUiThread { onGearChanged(gear) } },
-            onLocation = { loc -> runOnUiThread { state = state.copy(carPos = GeoPos(loc.latitude, loc.longitude)) } },
+            onLocation = { loc -> runOnUiThread {
+                stationary.onPosition(loc.latitude, loc.longitude)
+                lastLoc = loc
+                state = state.copy(carPos = GeoPos(loc.latitude, loc.longitude))
+            } },
             onVehicle = ::onVehicle,
         )
         car.start()
@@ -253,9 +259,15 @@ class MainActivity : ComponentActivity() {
         val live = if (fresh) LiveSignals(hr, inputs.glucose, pendingIhrn, stress, alertDrowsy) else LiveSignals(newIhrn = pendingIhrn, drowsiness = alertDrowsy)
         var decision = engine.update(simNow, live, driving)
         pendingIhrn = false
-        val effects = checkins.update(simNow, decision.level, decision.reason, parked = !driving)
+        val stationaryDue = driving && stationary.due(simNow)
+        if (stationaryDue != stationaryWasDue) { stationaryWasDue = stationaryDue; log("stationary due=$stationaryDue (${stationary.blocker(simNow) ?: "still ${stationary.stillSeconds(simNow)}s"})") }
+        val effects = checkins.update(
+            simNow, decision.level, decision.reason, parked = !driving,
+            stationaryDue = stationaryDue, carMoving = (state.speedKmh ?: 0) > 0,
+        )
         // No pulse outranks every other level: shown as a warning until the driver answers.
         if (checkins.noPulseActive) decision = decision.copy(level = Level.L2_WARNING, reason = Reason.NO_PULSE)
+        else if (checkins.stationaryEscalated) decision = decision.copy(level = Level.L2_WARNING, reason = Reason.STATIONARY)
         val prev = state
         val history = if (fresh) recordHr(prev.hrHistory, hr) else prev.hrHistory
         val next = prev.copy(
@@ -303,7 +315,7 @@ class MainActivity : ComponentActivity() {
     private fun placeEmergencyCall() {
         // The phone places the call; the car only asks (protocol: docs/protocol.md).
         relay.send(callJson(listOf("119_dial"), state.reason, "call"))
-        val msg = "119에 전화하도록 폰에 요청했어요."
+        val msg = "폰에 119 연결 화면을 열도록 요청했어요."
         car.speak(msg)
         state = state.copy(emergencyCountdown = null, lastEvent = msg)
     }
@@ -443,6 +455,7 @@ class MainActivity : ComponentActivity() {
     private fun onVehicle(sig: VehicleSignal) {
         when (sig) {
             is VehicleSignal.Speed -> if (sig.kmh != state.speedKmh) {
+                stationary.onSpeed(simNow, sig.kmh)
                 if (sig.kmh / 10 != (state.speedKmh ?: -10) / 10) log("speed: ${sig.kmh} km/h")
                 state = state.copy(speedKmh = sig.kmh)
             }
@@ -451,15 +464,30 @@ class MainActivity : ComponentActivity() {
                 state = state.copy(hazardOn = sig.on, lastEvent = if (sig.on) "${Messages.HAZARD_ON} ✓" else "비상등 꺼짐")
             }
             is VehicleSignal.Turn -> if (sig.side != state.turnSignal) { log("turn: ${sig.side}"); state = state.copy(turnSignal = sig.side) }
-            is VehicleSignal.Brake -> if (sig.pressed != state.brakeOn) { log("brake: ${sig.pressed}"); state = state.copy(brakeOn = sig.pressed) }
+            is VehicleSignal.Brake -> if (sig.pressed != state.brakeOn) {
+                log("brake: ${sig.pressed}")
+                if (sig.pressed == true) checkins.onDriverInput(simNow)
+                if (state.brakeOn != null) stationary.onDriverInput(simNow) // any toggle
+                state = state.copy(brakeOn = sig.pressed)
+            }
+            is VehicleSignal.Seat -> { log("driver seat occupied: ${sig.occupied}"); stationary.onSeatOccupied(sig.occupied) }
+            is VehicleSignal.Belt -> { log("seatbelt buckled: ${sig.buckled}"); stationary.onBelt(simNow, sig.buckled) }
+            is VehicleSignal.Door -> { log("driver door open: ${sig.open}"); stationary.onDoor(simNow, sig.open) }
             is VehicleSignal.Steering -> {
                 if (kotlin.math.abs(sig.deg - (state.steeringDeg ?: 0f)) >= 5f) log("steering: ${sig.deg}")
                 steering.onAngle(SystemClock.elapsedRealtime(), sig.deg)
+                // A few degrees of steering is driver input (used by the NO_PULSE check).
+                if (kotlin.math.abs(sig.deg - inputAngle) > DRIVER_INPUT_DEG) {
+                    inputAngle = sig.deg; checkins.onDriverInput(simNow); stationary.onDriverInput(simNow)
+                }
                 state = state.copy(steeringDeg = sig.deg)
             }
         }
         sendStatus(state)
     }
+
+    private var inputAngle = 0f
+    private var lastLoc: ai.pleos.playground.navi.data.CurrentLocationInfo? = null
 
     /** Carry out what the check-in engine decided. Every action is reported in lastEvent by CarServices. */
     private fun run(effects: List<Effect>) {
@@ -467,7 +495,11 @@ class MainActivity : ComponentActivity() {
             log("effect: $e")
             when (e) {
                 is Effect.Speak -> say(Messages.cue(e.cue))
-                is Effect.Chime -> { val m = Messages.cue(e.then); car.beep(e.beeps) { say(m) } }
+                is Effect.Chime -> {
+                    // Demo: the "정체 확인" waits for a person, so a sped-up demo clock goes back to real time here.
+                    if (e.then == ai.caredrive.car.engine.Cue.STATIONARY_ASK && speed > 1) { log("demo clock back to 1x for the question"); speed = 1 }
+                    val m = Messages.cue(e.then); car.beep(e.beeps) { say(m) }
+                }
                 is Effect.AmbientRed -> car.ambientRed(e.on)
                 is Effect.CabinLight -> car.cabinLight(e.on)
                 Effect.AddRestStop -> { car.addNearestRestStop(); state = state.copy(guidingToRest = true) }
@@ -503,6 +535,13 @@ class MainActivity : ComponentActivity() {
         put("reason", reason.name)
         put("stage", stage)
         state.carPos?.let { p -> put("location", buildJsonObject { put("lat", p.lat); put("lon", p.lon) }) }
+        // Text for the guardian, with what to tell 119 (the app cannot call 119 itself).
+        put("script", ai.caredrive.car.engine.GuardianScript.build(
+            stage, reason, state.carPos?.lat, state.carPos?.lon,
+            headingDeg = lastLoc?.heading, address = lastLoc?.address,
+            near = car.nearestRestArea()?.let { (r, km) -> r.name to km },
+            lastHr = state.heartRate ?: state.hrHistory.lastOrNull()?.bpm,
+        ))
     }.toString()
 
     /** What the car does when the level or reason changes. */
@@ -524,11 +563,13 @@ class MainActivity : ComponentActivity() {
     private fun onGearChanged(gear: VehicleGear) {
         log("gear: $gear")
         carParked = gear == VehicleGear.GEAR_PARK
+        stationary.onGear(simNow, carParked)
         evaluate()
     }
 
     private fun setCondition(c: DriverCondition) {
         engine.setCondition(c)
+        stationary.places = c.places
         inputs = inputs.copy(condition = c)
     }
 
@@ -572,6 +613,8 @@ class MainActivity : ComponentActivity() {
             // Check-in flows through the real engines (same path as phone messages and car buttons).
             "cardiac" -> { freshCheckins(); inputs = inputs.copy(drivingOverride = true, heartRate = 92); pendingIhrn = true }
             "nopulse" -> { freshCheckins(); onPulse("absent") }
+            // In gear D, stopped for (almost) 2 minutes after 50 km/h, no input: the "정체 확인" comes in a few seconds.
+            "stationary" -> { freshCheckins(); inputs = inputs.copy(drivingOverride = true, heartRate = 74); stationary.demoBackdate(simNow, 115) }
             "stresstalk" -> { freshCheckins(); inputs = inputs.copy(drivingOverride = true, heartRate = 108); advance(6) }
             "drowsy" -> {
                 freshCheckins()
@@ -593,7 +636,7 @@ class MainActivity : ComponentActivity() {
     private fun freshCheckins() {
         run(checkins.reset())
         drowsiness.reset(); steering.reset()
-        engine.reset(); pendingIhrn = false
+        engine.reset(); pendingIhrn = false; stationary.reset()
         inputs = inputs.copy(rmssd = null, glucose = null)
         if (inputs.condition.sleepMinutes == null) setCondition(DriverCondition(sleepMinutes = 280, energyScore = 45, restingHr = 68))
     }
@@ -633,6 +676,8 @@ class MainActivity : ComponentActivity() {
         /** The watch reports about once a second; 15 s without a reading is shown as missing. */
         private const val STALE_AFTER_MS = 15_000L
         private const val EMERGENCY_COUNTDOWN_S = 10
+        /** Steering change that counts as driver input (NO_PULSE pause, "정체 확인"). */
+        private const val DRIVER_INPUT_DEG = 2f
         private const val CAR_SPEED = "android.car.permission.CAR_SPEED"
     }
 }

@@ -22,6 +22,11 @@ import ai.pleos.playground.vehicle.listener.GearSelectionListener
 import ai.pleos.playground.vehicle.listener.BrakePedalStatusListener
 import ai.pleos.playground.vehicle.listener.SteeringWheelAngleListener
 import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
+import ai.pleos.playground.vehicle.listener.SeatOccupancyListener
+import ai.pleos.playground.vehicle.listener.SeatBeltBuckledStateListener
+import ai.pleos.playground.vehicle.listener.DoorPositionListener
+import ai.pleos.playground.vehicle.api.model.area.DoorArea
+import ai.pleos.playground.vehicle.constant.area.DoorValue
 import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
 import ai.pleos.playground.vehicle.constant.control.LightSwitch
 import ai.pleos.playground.vehicle.api.model.area.SeatArea as LightArea
@@ -77,6 +82,26 @@ class CarServices(
         override fun onFailed(e: Exception) = report("핸들 각도를 읽지 못했어요", e)
     }
 
+    // Driver seat and door: used by the "정체 확인" (did the driver get out?).
+    private val driverSeat = SeatArea(SeatValue.ROW_1_LEFT)
+    private val driverDoor = DoorArea(DoorValue.ROW_1_LEFT)
+    private val seatListener = object : SeatOccupancyListener {
+        // On the Pleos emulator the event carries the previous value, so read the current one after it settles.
+        override fun onSeatOccupancyUpdated(occupied: Boolean?) { main.postDelayed({ readSeat() }, 400) }
+        override fun onFailed(e: Exception) = report("운전석 착석 상태를 읽지 못했어요", e)
+    }
+    private fun readSeat() = guard("착석") {
+        vehicle.getSeat().getCurrentSeatOccupancy(driverSeat, { v -> main.post { onVehicle(VehicleSignal.Seat(v)) } }, { report("착석 조회 실패", it) })
+    }
+    private val beltListener = object : SeatBeltBuckledStateListener {
+        override fun onSeatBeltBuckledStateUpdated(buckled: Boolean?) { main.post { onVehicle(VehicleSignal.Belt(buckled)) } }
+        override fun onFailed(e: Exception) = report("안전벨트 상태를 읽지 못했어요", e)
+    }
+    private val doorListener = object : DoorPositionListener {
+        override fun onPositionUpdated(position: Int?) { position?.let { main.post { onVehicle(VehicleSignal.Door(it > 0)) } } }
+        override fun onFailed(e: Exception) = report("운전석 문 상태를 읽지 못했어요", e)
+    }
+
     private val naviListener = object : NaviHelperEventListener {
         override fun onCurrentLocationInfo(info: CurrentLocationInfo) {
             location = info
@@ -105,6 +130,15 @@ class CarServices(
         guard("방향지시등") { vehicle.getTurnSignal().registerTurnSignalState(turnListener) }
         guard("브레이크") { vehicle.getBrake().registerBrakePedalStatus(brakeListener) }
         guard("핸들") { vehicle.getSteeringWheel().registerSteeringWheelAngle(steeringListener) }
+        guard("착석") {
+            vehicle.getSeat().registerSeatOccupancy(driverSeat, seatListener)
+            readSeat()
+        }
+        guard("안전벨트") {
+            vehicle.getSeat().registerSeatBeltBuckledState(driverSeat, beltListener)
+            vehicle.getSeat().getCurrentSeatBeltBuckledState(driverSeat, { onVehicle(VehicleSignal.Belt(it)) }, { report("안전벨트 조회 실패", it) })
+        }
+        guard("운전석 문") { vehicle.getDoor().registerDoorPosition(driverDoor, doorListener) }
         startCarProperties()
 
         navi.initialize(
@@ -131,6 +165,9 @@ class CarServices(
         guard("방향지시등") { vehicle.getTurnSignal().unregisterTurnSignalState(turnListener) }
         guard("브레이크") { vehicle.getBrake().unregisterBrakePedalStatus(brakeListener) }
         guard("핸들") { vehicle.getSteeringWheel().unregisterSteeringWheelAngle(steeringListener) }
+        guard("착석") { vehicle.getSeat().unregisterSeatOccupancy(driverSeat, seatListener) }
+        guard("안전벨트") { vehicle.getSeat().unregisterSeatBeltBuckledState(driverSeat, beltListener) }
+        guard("운전석 문") { vehicle.getDoor().unregisterDoorPosition(driverDoor, doorListener) }
         guard("차량 속성") { carProps?.disconnect() }
         vehicle.release()
         navi.removeListener(naviListener)
@@ -165,15 +202,22 @@ class CarServices(
         val now = android.os.SystemClock.elapsedRealtime()
         lastSpoken?.let { (t, at) -> if (t == text && now - at < 3_000) return }
         lastSpoken = text to now
-        Log.i(TAG, "speak: $text")
+        // Log the screen words (video captions show "119"); the voice gets the spoken form ("일일구").
+        Log.i(TAG, "speak: ${text.replace("일일구", "119")}")
         if (!ttsReady) { pendingSpeech = text; return }
         tts.stop()
-        tts.speak(text, true)
+        tts.speak(ai.caredrive.car.ui.Message.spoken(text), true)
     }
 
 
     /** Make the cabin a little cooler: driver temperature −2℃ and fan +2, within the car's limits. */
+    private var lastCooledAt = 0L
+
     fun coolCabin() {
+        // One alert can ask twice (level change + question): cool once per minute, not to the fan's maximum.
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastCooledAt < 60_000L) return
+        lastCooledAt = now
         val hvac = vehicle.getHVAC()
         // HVAC areas are car-specific (power and fan cover the whole first row, temperature is per seat),
         // so always use the area the car reports that includes the driver seat.
@@ -366,4 +410,7 @@ sealed interface VehicleSignal {
     data class Steering(val deg: Float) : VehicleSignal
     data class Speed(val kmh: Int) : VehicleSignal
     data class Hazard(val on: Boolean) : VehicleSignal
+    data class Seat(val occupied: Boolean?) : VehicleSignal
+    data class Belt(val buckled: Boolean?) : VehicleSignal
+    data class Door(val open: Boolean) : VehicleSignal
 }

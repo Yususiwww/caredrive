@@ -12,4 +12,10 @@ docs/demo/*.mp4
 .claude/skills/
 
 # Planning PDFs stay local; the application form goes by email
-docs/planning/*.pdf
+docs/planning/
+
+# AI opening working files stay local (large); docs kept
+docs/demo/ai-scenes/clips/
+docs/demo/ai-scenes/keyframes/
+docs/demo/ai-scenes/work/
+docs/demo/ai-scenes/*.mp4

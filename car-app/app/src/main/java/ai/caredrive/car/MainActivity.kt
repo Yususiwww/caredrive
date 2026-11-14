@@ -2,6 +2,16 @@ package ai.caredrive.car
 
 import ai.caredrive.car.car.AlertNotifier
 import ai.caredrive.car.car.CarServices
+import ai.caredrive.car.car.VehicleSignal
+import ai.caredrive.car.engine.CheckinEngine
+import ai.caredrive.car.engine.Drowsiness
+import ai.caredrive.car.engine.DrowsyScore
+import ai.caredrive.car.engine.Effect
+import ai.caredrive.car.engine.SteeringMonitor
+import ai.caredrive.car.model.Ask
+import ai.caredrive.car.model.PulseState
+import ai.caredrive.car.model.Reason
+import ai.caredrive.car.ui.Message
 import ai.caredrive.car.demo.DemoInputs
 import ai.caredrive.car.demo.DemoScenario
 import ai.caredrive.car.engine.DriverCondition
@@ -35,7 +45,6 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.json.Json
@@ -60,6 +69,11 @@ class MainActivity : ComponentActivity() {
     private var lastSentStatus: String? = null
     private val json = Json { ignoreUnknownKeys = true }
     private val engine = RiskEngine()
+    private val checkins = CheckinEngine()
+    private val drowsiness = Drowsiness()
+    private val steering = SteeringMonitor()
+    /** Wall-clock minute of the day when the app started; the simulated clock runs on from here (time-of-day drowsiness). */
+    private val startClockMin = java.util.Calendar.getInstance().let { it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE) }
     private val main = Handler(Looper.getMainLooper())
 
     // Inputs: simulated until the relay (step 4) delivers phone data.
@@ -119,6 +133,15 @@ class MainActivity : ComponentActivity() {
             evaluate()
             car.speak(Messages.forState(state).sayAloud())
         }
+        override fun answer(ask: Ask, yes: Boolean) {
+            log("answer: $ask yes=$yes")
+            run(checkins.answer(simNow, ask, yes, parked = state.parked))
+            evaluate()
+        }
+        override fun cancelContact() {
+            run(checkins.cancelContact())
+            evaluate()
+        }
     }
 
     private val tick = object : Runnable {
@@ -144,6 +167,10 @@ class MainActivity : ComponentActivity() {
             if (intent.hasExtra("compact")) forceCompact = intent.getBooleanExtra("compact", false)
             intent.getStringExtra("theme")?.let { forceDark = when (it) { "dark" -> true; "light" -> false; else -> null } }
             if (intent.getBooleanExtra("call119", false)) actions.call119()
+            intent.getStringExtra("pulse")?.let { onPulse(it) }
+            intent.getStringExtra("answer")?.let { a -> state.checkin?.let { actions.answer(it.ask, a == "yes") } }
+            if (intent.getBooleanExtra("cancelContact", false)) actions.cancelContact()
+            if (intent.hasExtra("speed")) speed = intent.getIntExtra("speed", 1).coerceIn(1, 60)
             evaluate()
         }
     }
@@ -152,9 +179,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         car = CarServices(
             this,
-            onEvent = { msg -> runOnUiThread { state = state.copy(lastEvent = msg) } },
+            onEvent = { msg -> runOnUiThread { log("event: $msg"); state = state.copy(lastEvent = msg) } },
             onGear = { gear -> runOnUiThread { onGearChanged(gear) } },
             onLocation = { loc -> runOnUiThread { state = state.copy(carPos = GeoPos(loc.latitude, loc.longitude)) } },
+            onVehicle = ::onVehicle,
         )
         car.start()
         notifier = AlertNotifier(this) { id ->
@@ -169,21 +197,27 @@ class MainActivity : ComponentActivity() {
             onConnection = { up -> if (!up) state = state.copy(connected = false); lastSentStatus = null },
         )
         relay.start()
-        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
+        val missing = listOf(android.Manifest.permission.POST_NOTIFICATIONS, CAR_SPEED)
+            .filter { checkSelfPermission(it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
         if (BuildConfig.DEBUG) {
             registerReceiver(demoReceiver, IntentFilter(DEMO_ACTION), RECEIVER_EXPORTED)
             applyPreset("predrive")
         }
         main.post(tick)
         setContent {
-            CareTheme(dark = forceDark ?: isSystemInDarkTheme()) {
+            CareTheme(dark = forceDark ?: true) {
                 CareScreen(state, actions, forceCompact) {
                     if (BuildConfig.DEBUG) DemoBar(demoStatus) { applyPreset(it); evaluate() }
                 }
             }
         }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Speed needs the runtime permission: subscribe again once it is granted.
+        if (CAR_SPEED in permissions) car.startCarProperties()
     }
 
     override fun onResume() {
@@ -213,10 +247,15 @@ class MainActivity : ComponentActivity() {
         val fresh = data == DataState.LIVE
         val hr = if (state.connected) inputs.heartRate else inputs.heartRate?.let { it + demoVariation() }
         val stress = inputs.rmssd?.let { Hrv.stress(it, inputs.condition.baselineRmssd) }
+        val drowsy = if (driving) drowsyScore(if (fresh) hr else null, if (fresh) inputs.rmssd else null) else null
         // Old readings never drive an alert: the engine sees "no data" until readings come back.
-        val live = if (fresh) LiveSignals(hr, inputs.glucose, pendingIhrn, stress) else LiveSignals(newIhrn = pendingIhrn)
-        val decision = engine.update(simNow, live, driving)
+        val alertDrowsy = drowsy?.takeIf { it.live }?.score
+        val live = if (fresh) LiveSignals(hr, inputs.glucose, pendingIhrn, stress, alertDrowsy) else LiveSignals(newIhrn = pendingIhrn, drowsiness = alertDrowsy)
+        var decision = engine.update(simNow, live, driving)
         pendingIhrn = false
+        val effects = checkins.update(simNow, decision.level, decision.reason, parked = !driving)
+        // No pulse outranks every other level: shown as a warning until the driver answers.
+        if (checkins.noPulseActive) decision = decision.copy(level = Level.L2_WARNING, reason = Reason.NO_PULSE)
         val prev = state
         val history = if (fresh) recordHr(prev.hrHistory, hr) else prev.hrHistory
         val next = prev.copy(
@@ -232,15 +271,23 @@ class MainActivity : ComponentActivity() {
             drivingMin = decision.drivingMin,
             nextBreakInMin = decision.nextBreakInMin,
             parked = !driving,
-            guidingToRest = prev.guidingToRest && decision.level == Level.L2_WARNING,
-            restPreview = if (decision.level == Level.L2_WARNING) prev.restPreview ?: nearestRestPreview() else null,
+            guidingToRest = prev.guidingToRest && decision.level != Level.L0_NORMAL,
+            restPreview = if (decision.level == Level.L2_WARNING || prev.guidingToRest) prev.restPreview ?: nearestRestPreview() else null,
             hrHistory = history,
             nowMs = simNow,
             restingHr = engine.restingHr(),
             hrLimit = engine.hrLimit(),
+            checkin = checkins.checkin,
+            contacting = checkins.contacting,
+            nowPlaying = checkins.nowPlaying,
+            pulse = checkins.pulse,
+            drowsiness = drowsy?.score,
+            ambientRed = checkins.ambientRed,
         )
         state = next
+        if (drowsy != null && drowsy.score != prev.drowsiness) log("drowsiness: ${drowsy.score} ${drowsy.parts}")
         if (next.level != prev.level || next.reason != prev.reason) respond(next)
+        run(effects)
         if (next.data != prev.data) log("data: ${next.data}")
         sendStatus(next)
     }
@@ -255,7 +302,7 @@ class MainActivity : ComponentActivity() {
 
     private fun placeEmergencyCall() {
         // The phone places the call; the car only asks (protocol: docs/protocol.md).
-        relay.send(buildJsonObject { put("type", "call"); put("to", "119") }.toString())
+        relay.send(callJson(listOf("119_dial"), state.reason, "call"))
         val msg = "119에 전화하도록 폰에 요청했어요."
         car.speak(msg)
         state = state.copy(emergencyCountdown = null, lastEvent = msg)
@@ -300,6 +347,16 @@ class MainActivity : ComponentActivity() {
             put("stress", s.stress)
             put("mood", s.mood?.name)
             put("lastEvent", s.lastEvent)
+            put("ask", s.checkin?.ask?.name)
+            put("secondsLeft", s.checkin?.secondsLeft)
+            put("helpRequested", s.checkin?.helpRequested)
+            put("contacting", s.contacting != null)
+            put("nowPlaying", s.nowPlaying)
+            put("drowsiness", s.drowsiness)
+            put("speedKmh", s.speedKmh)
+            put("hazardOn", s.hazardOn)
+            put("brakeOn", s.brakeOn)
+            put("pulse", s.pulse.name)
         }.toString()
         if (msg != lastSentStatus && relay.send(msg)) lastSentStatus = msg
     }
@@ -332,16 +389,134 @@ class MainActivity : ComponentActivity() {
             "drive" -> inputs = inputs.copy(drivingOverride = m["driving"]?.jsonPrimitive?.booleanOrNull)
             "advance" -> advance(m["minutes"]?.jsonPrimitive?.intOrNull ?: 0)
             "scenario" -> startScenario()
+            "pulse" -> m["state"]?.jsonPrimitive?.content?.let { onPulse(it) }
+            "drowsy" -> onDrowsyDemo(m)
+            "speed" -> speed = (m["x"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(1, 60)
+            "answer" -> {
+                // Phone simulator (demo) can answer for the driver; same path as the car buttons.
+                val ask = m["ask"]?.jsonPrimitive?.content?.let { n -> Ask.entries.firstOrNull { it.name == n } }
+                if (ask != null) actions.answer(ask, m["yes"]?.jsonPrimitive?.booleanOrNull ?: false)
+            }
         }
         evaluate()
     }
 
+    private fun onPulse(value: String) {
+        val ps = when (value) {
+            "absent" -> PulseState.ABSENT
+            "offwrist" -> PulseState.OFF_WRIST
+            "weak" -> PulseState.WEAK
+            else -> PulseState.PRESENT
+        }
+        // Parked / no steering never shortens the timer; only logged for the record.
+        log("pulse: $ps parked=${state.parked} steeringIdle=${steering.flag(SystemClock.elapsedRealtime())}")
+        if (ps == PulseState.ABSENT || ps == PulseState.OFF_WRIST) inputs = inputs.copy(heartRate = null)
+        run(checkins.onPulse(simNow, ps))
+    }
+
+    /** Demo injection: the emulator cannot steer, so the phone sends the drowsiness signs (protocol `drowsy`). */
+    private fun onDrowsyDemo(m: JsonObject) {
+        if (m["clear"]?.jsonPrimitive?.booleanOrNull == true) { drowsiness.demoHrDrop = null; steering.reset(); log("drowsy demo cleared"); return }
+        m["hrDrop"]?.jsonPrimitive?.intOrNull?.let { drowsiness.demoHrDrop = it }
+        m["steeringIdleSec"]?.jsonPrimitive?.intOrNull?.let { steering.injectIdleCorrection(SystemClock.elapsedRealtime(), it) }
+        log("drowsy demo: $m")
+    }
+
+    private fun drowsyScore(hr: Int?, rmssd: Double?): DrowsyScore {
+        val now = SystemClock.elapsedRealtime()
+        steering.learn(now)
+        val minuteOfDay = (startClockMin + simNow / MIN).toInt()
+        return drowsiness.update(
+            now = simNow,
+            sleepMinutes = inputs.condition.sleepMinutes,
+            drivingMin = state.drivingMin,
+            breakIntervalMin = engine.readiness().breakIntervalMin,
+            hourOfDay = (minuteOfDay / 60) % 24,
+            hr = hr,
+            restingHr = engine.restingHr(),
+            rmssd = rmssd,
+            baselineRmssd = inputs.condition.baselineRmssd,
+            steeringFlag = steering.flag(now),
+        )
+    }
+
+    private fun onVehicle(sig: VehicleSignal) {
+        when (sig) {
+            is VehicleSignal.Speed -> if (sig.kmh != state.speedKmh) {
+                if (sig.kmh / 10 != (state.speedKmh ?: -10) / 10) log("speed: ${sig.kmh} km/h")
+                state = state.copy(speedKmh = sig.kmh)
+            }
+            is VehicleSignal.Hazard -> if (sig.on != state.hazardOn) {
+                log("hazard: ${sig.on}")
+                state = state.copy(hazardOn = sig.on, lastEvent = if (sig.on) "${Messages.HAZARD_ON} ✓" else "비상등 꺼짐")
+            }
+            is VehicleSignal.Turn -> if (sig.side != state.turnSignal) { log("turn: ${sig.side}"); state = state.copy(turnSignal = sig.side) }
+            is VehicleSignal.Brake -> if (sig.pressed != state.brakeOn) { log("brake: ${sig.pressed}"); state = state.copy(brakeOn = sig.pressed) }
+            is VehicleSignal.Steering -> {
+                if (kotlin.math.abs(sig.deg - (state.steeringDeg ?: 0f)) >= 5f) log("steering: ${sig.deg}")
+                steering.onAngle(SystemClock.elapsedRealtime(), sig.deg)
+                state = state.copy(steeringDeg = sig.deg)
+            }
+        }
+        sendStatus(state)
+    }
+
+    /** Carry out what the check-in engine decided. Every action is reported in lastEvent by CarServices. */
+    private fun run(effects: List<Effect>) {
+        effects.forEach { e ->
+            log("effect: $e")
+            when (e) {
+                is Effect.Speak -> say(Messages.cue(e.cue))
+                is Effect.Chime -> { val m = Messages.cue(e.then); car.beep(e.beeps) { say(m) } }
+                is Effect.AmbientRed -> car.ambientRed(e.on)
+                is Effect.CabinLight -> car.cabinLight(e.on)
+                Effect.AddRestStop -> { car.addNearestRestStop(); state = state.copy(guidingToRest = true) }
+                Effect.CoolCabin -> car.coolCabin()
+                is Effect.Call -> {
+                    relay.send(callJson(e.to, e.reason, e.stage))
+                    state = state.copy(lastEvent = when (e.stage) {
+                        "pre_alert" -> "보호자에게 미리 알렸어요"
+                        "cancel" -> "연락 취소를 폰에 알렸어요"
+                        else -> "폰에 연락을 요청했어요: 보호자 전화 · 119 연결 준비"
+                    })
+                }
+                is Effect.Play -> {
+                    relay.send(buildJsonObject { put("type", "play"); put("playlist", e.playlist) }.toString())
+                    state = state.copy(nowPlaying = checkins.nowPlaying, lastEvent = "폰에 플레이리스트 재생을 요청했어요")
+                }
+                is Effect.Log -> relay.send(buildJsonObject {
+                    put("type", "ask"); put("ask", e.ask.name); put("answer", e.answer)
+                }.toString())
+            }
+        }
+        if (effects.isNotEmpty()) state = state.copy(
+            checkin = checkins.checkin, contacting = checkins.contacting, nowPlaying = checkins.nowPlaying,
+            pulse = checkins.pulse, ambientRed = checkins.ambientRed,
+        )
+    }
+
+    private fun say(m: Message) { car.speak(m.sayAloud()) }
+
+    private fun callJson(to: List<String>, reason: Reason, stage: String) = buildJsonObject {
+        put("type", "call")
+        put("to", kotlinx.serialization.json.JsonArray(to.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        put("reason", reason.name)
+        put("stage", stage)
+        state.carPos?.let { p -> put("location", buildJsonObject { put("lat", p.lat); put("lon", p.lon) }) }
+    }.toString()
+
     /** What the car does when the level or reason changes. */
     private fun respond(s: CareState) {
+        // An open question or a call in progress speaks for itself (check-in effects): no second voice.
+        val asking = s.checkin != null || s.contacting != null
         val say = Messages.forState(s).speak
         // A different sound per level, then the same words as the screen.
-        if (s.level != Level.L0_NORMAL) car.chime(s.level) { say?.let(car::speak) } else say?.let(car::speak)
+        if (!asking) { if (s.level != Level.L0_NORMAL) car.chime(s.level) { say?.let(car::speak) } else say?.let(car::speak) }
         if (s.level == Level.L1_CAUTION) car.coolCabin()
+        // Drowsiness at 60+: the nearest rest stop goes in as a waypoint without asking.
+        if (s.level == Level.L2_WARNING && s.reason == Reason.DROWSY && !s.guidingToRest) {
+            car.addNearestRestStop(); state = state.copy(guidingToRest = true)
+        }
         // Shown over other apps (navigation in front) as a system notification; cancelled when it is over.
         if (!resumed && (s.level == Level.L2_WARNING || s.level == Level.L3_STOPPED)) notifier.show(s) else if (s.level <= Level.L1_CAUTION) notifier.cancel()
     }
@@ -372,6 +547,10 @@ class MainActivity : ComponentActivity() {
             "predrive" -> {
                 setCondition(low)
                 engine.reset()
+                run(checkins.reset())
+                drowsiness.reset(); steering.reset()
+                // Demo start: lights back to normal even if an earlier run ended while red.
+                car.ambientRed(false); car.cabinLight(false)
                 inputs = inputs.copy(heartRate = 72, glucose = null, rmssd = null, drivingOverride = false)
                 evaluate()
                 // Announce today's condition before departure.
@@ -390,12 +569,39 @@ class MainActivity : ComponentActivity() {
             "park" -> inputs = inputs.copy(drivingOverride = false)
             "nodata" -> inputs = inputs.copy(drivingOverride = true)
             "scenario" -> startScenario()
+            // Check-in flows through the real engines (same path as phone messages and car buttons).
+            "cardiac" -> { freshCheckins(); inputs = inputs.copy(drivingOverride = true, heartRate = 92); pendingIhrn = true }
+            "nopulse" -> { freshCheckins(); onPulse("absent") }
+            "stresstalk" -> { freshCheckins(); inputs = inputs.copy(drivingOverride = true, heartRate = 108); advance(6) }
+            "drowsy" -> {
+                freshCheckins()
+                inputs = inputs.copy(drivingOverride = true, heartRate = 72)
+                // Sleep 4h40 (+25) and a steering correction after >10 s idle (+20) = 45: the L1 question.
+                steering.injectIdleCorrection(SystemClock.elapsedRealtime(), 12)
+            }
+            "contacting" -> {
+                freshCheckins()
+                inputs = inputs.copy(drivingOverride = true, heartRate = 92); pendingIhrn = true
+                evaluate()
+                actions.answer(Ask.CARDIAC_CHECK, true)
+                inputs = inputs.copy(drivingOverride = false)
+            }
         }
     }
 
+    /** Demo presets start each flow clean: no open question, snooze or call left from an earlier one. */
+    private fun freshCheckins() {
+        run(checkins.reset())
+        drowsiness.reset(); steering.reset()
+        engine.reset(); pendingIhrn = false
+        inputs = inputs.copy(rmssd = null, glucose = null)
+        if (inputs.condition.sleepMinutes == null) setCondition(DriverCondition(sleepMinutes = 280, energyScore = 45, restingHr = 68))
+    }
+
     private fun stopScenario() {
+        // Only a running scenario owns the clock speed (a demo `speed` message keeps its own).
+        if (scenarioIndex >= 0) speed = 1
         scenarioIndex = -1
-        speed = 1
         demoStatus = null
     }
 
@@ -427,5 +633,6 @@ class MainActivity : ComponentActivity() {
         /** The watch reports about once a second; 15 s without a reading is shown as missing. */
         private const val STALE_AFTER_MS = 15_000L
         private const val EMERGENCY_COUNTDOWN_S = 10
+        private const val CAR_SPEED = "android.car.permission.CAR_SPEED"
     }
 }

@@ -1,6 +1,9 @@
 // Records a side-by-side demo: phone simulator page (headless Chrome screencast) + car screen with sound
 // (scrcpy, audio source "playback" so the car's voice and chimes are in the file; needs `brew install scrcpy`
 // and the emulator started WITH audio, i.e. without -no-audio).
+// Driving is real vehicle data: gear, speed, brake, steering and turn-signal telltales are written to the Pleos Connect
+// Virtual Console (adb forward tcp:8088 tcp:8088), which publishes them on the emulator's vehicle bus, so the car app
+// reads them through the Pleos Vehicle SDK / AAOS CarPropertyManager exactly as in a car.
 // Usage: node demo/record.mjs <outDir>     (relay server and Pleos emulator with the car app must be running)
 // Then:  python3 demo/compose.py <outDir>  → <outDir>/caredrive-demo.mp4
 
@@ -17,6 +20,34 @@ const PORT = 9333;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const adb = (...args) => execFileSync(ADB, args, { encoding: 'utf8' });
+
+// --- Pleos Virtual Console: real vehicle signals ---------------------------------------------------
+const VC = 'http://127.0.0.1:8088';
+adb('forward', 'tcp:8088', 'tcp:8088');
+// The console only accepts writes while a client session is alive (3 s timeout): keep one open.
+const heartbeat = setInterval(() => fetch(`${VC}/browser/session?client=caredrive-demo`, { method: 'POST' }).catch(() => {}), 1000);
+await fetch(`${VC}/browser/session?client=caredrive-demo`, { method: 'POST' });
+const vc = async (path) => {
+  try {
+    const r = await fetch(`${VC}${path}`, { method: 'PUT' });
+    if (!r.ok) console.log(`[demo] console ${path} → ${r.status}`);
+  } catch (e) { console.log(`[demo] console ${path} failed: ${e.message}`); }
+};
+let car = { speed: 0, brake: 0, steering: 0 };
+const controls = (c) => { car = { ...car, ...c }; return vc(`/vehicle/controls?speed=${car.speed}&accelerator=${car.brake ? 0 : 30}&brake=${car.brake}&steering=${car.steering}`); };
+const gear = (g) => vc(`/vehicle/gear?gear=${g}`);
+/** Ramp the speed (km/h) smoothly over ms. */
+const ramp = async (to, ms, brake = 0) => {
+  const from = car.speed, steps = Math.max(1, Math.round(ms / 250));
+  for (let i = 1; i <= steps; i++) { await controls({ speed: Math.round(from + (to - from) * i / steps), brake }); await sleep(ms / steps); }
+};
+const hazard = (on) => Promise.all(['TurnSignalLeft', 'TurnSignalRight'].map((t) => vc(`/vehicle/telltales/simulator?type=${t}&state=${on ? 'Blink' : 'Off'}&color=Green`)));
+const logcatHas = (text) => adb('logcat', '-d', '-s', 'CareDrive:I').includes(text);
+
+// Start parked and still, hazard off.
+await controls({ speed: 0, brake: 60, steering: 0 });
+await gear('Park');
+await hazard(false);
 
 mkdirSync(join(OUT, 'frames'), { recursive: true });
 const timeline = { frames: [], chapters: [], carStart: 0, carEnd: 0 };
@@ -111,41 +142,72 @@ const tapCar = (text) => {
 };
 
 // --- scenario ------------------------------------------------------------------------------------
-chapter('1. 출발 전 · 폰이 오늘 컨디션을 차로 보내요');
+const phone = (msg) => js(`send(${JSON.stringify(msg)})`);
+
+chapter('1. 출발 전 컨디션');
 await js(`slide('sleep', 280, 1200)`);
 await js(`slide('energy', 45, 900)`);
 await js(`tap('sendCondition')`);
 await sleep(7000);
 
-chapter('2. 주행 시작');
-await js(`tap('driveOn')`);
-await sleep(5000);
+chapter('2. 주행 · 실제 기어 D와 속도');
+await js(`tap('driveReal')`); // the car follows its real gear from here on
+await controls({ brake: 60 });
+await gear('Drive');
+await sleep(800);
+await ramp(60, 4000);
+await sleep(1500);
+await ramp(80, 3000);
+await sleep(3000);
 
-chapter('3. 심박이 오르면 · 차가 공조를 시원하게');
-await js(`slide('hr', 116, 3000)`);
-await js(`tap('adv10')`);
-await sleep(9000);
-
-chapter('4. 운전 1시간 · 수면이 짧은 날은 휴식을 앞당겨요');
-await js(`slide('hr', 80, 2000)`);
-await js(`tap('adv30')`);
-await sleep(1200);
-await js(`tap('adv30')`);
-await sleep(9000);
-
-chapter('5. 워치의 부정맥 알림 · 휴게소 안내를 제안해요');
-await js(`tap('sendIhrn')`);
+chapter('3. 긴장 · 힘든 일이 있었나요?');
+await js(`slide('hr', 112, 2500)`);
+await phone({ type: 'advance', minutes: 5 }); // heart rate high for 5 minutes (time skip)
 await sleep(6500);
-tapCar('휴게소 안내');
+tapCar('좀 그래요');
 await sleep(7000);
+await js(`slide('hr', 76, 1500)`);
+await sleep(1500);
 
-chapter('6. 정차하면 · 이유에 맞는 안내');
+chapter('4. 졸음 · 핸들 신호');
+// Real steering signal: no steering for >10 s (held since chapter 2), then a sudden correction.
+await controls({ steering: 28 });
+await sleep(400);
+await controls({ steering: 4 });
+await sleep(3000);
+if (!logcatHas('DROWSY_ASK')) { console.log('[demo] steering alone did not ask: adding the demo HR-drop signal'); await phone({ type: 'drowsy', hrDrop: 10 }); }
+await sleep(4000);
+tapCar('쉬어 갈게요');
+await sleep(6000);
+await phone({ type: 'drowsy', clear: true });
+adb('shell', 'am', 'start', '-n', 'ai.caredrive.car/.MainActivity'); // back in front of the navigation
+await sleep(1500);
+
+chapter('5. 심장 이상 · 비상등 · 정차 · 연락');
+await js(`tap('sendIhrn')`);
+await sleep(6000);
+tapCar('도움이 필요해요');
+await sleep(4000);
 adb('shell', 'am', 'start', '-n', 'ai.caredrive.car/.MainActivity');
-await js(`tap('driveOff')`);
-await sleep(9000);
+await hazard(true);
+await sleep(2000);
+await ramp(0, 4000, 50);
+await gear('Park');
+await sleep(8000);
+
+chapter('6. 맥박 없음 · 3분 타이머 10배속');
+await hazard(false);
+await js(`tap('pulseAbsent')`);
+await sleep(1500);
+await js(`tap('speed10')`); // 180 s timer shown 10x faster (demo only)
+await sleep(19000);
+await js(`tap('speed1')`);
+await sleep(4000);
 
 // --- finish --------------------------------------------------------------------------------------
 timeline.carEnd = Date.now();
+clearInterval(heartbeat);
+await hazard(false);
 await call('Page.stopScreencast');
 rec.kill('SIGINT');
 await new Promise((r) => rec.once('exit', r));

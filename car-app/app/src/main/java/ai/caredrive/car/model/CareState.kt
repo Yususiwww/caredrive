@@ -46,11 +46,18 @@ data class Checkin(
     val totalSeconds: Int? = null,
     /** NO_PULSE after 60 s: contacts already got a pre-alert text. */
     val preAlerted: Boolean = false,
+    /** CARDIAC_CHECK only: driver asked for help (or did not answer in 30 s). Waiting for gear P to contact. */
+    val helpRequested: Boolean = false,
 )
 
-enum class PulseState { PRESENT, ABSENT, OFF_WRIST }
+/** Watch pulse reading. Only ABSENT asks the driver; OFF_WRIST and WEAK never escalate. */
+enum class PulseState { PRESENT, ABSENT, OFF_WRIST, /** On the wrist, but the signal is poor. */ WEAK }
 
-/** Who the phone has been asked to reach, shown as a checklist on screen. */
+/**
+ * Who the phone has been asked to reach, shown as a checklist on screen.
+ * [emergency119] means the phone opened its dialer with 119 filled in (a normal app cannot dial 119 itself):
+ * shown as "119 연결 준비". [contacts] means the guardian is being called.
+ */
 data class Contacting(val contacts: Boolean, val emergency119: Boolean, val reason: Reason)
 
 /** Whether the watch data on screen is current. Shown honestly instead of silently using old numbers. */
@@ -115,6 +122,14 @@ data class CareState(
     val contacting: Contacting? = null,
     /** Vehicle speed in km/h when the car reports it (null on cars/emulators without it). */
     val speedKmh: Int? = null,
+    /** Brake pedal pressed (Pleos Brake), null when the car does not report it. */
+    val brakeOn: Boolean? = null,
+    /** Turn signal from the car: LEFT, RIGHT or null (off / unknown). */
+    val turnSignal: String? = null,
+    /** Steering wheel angle in degrees (Pleos SteeringWheel), null when not reported. */
+    val steeringDeg: Float? = null,
+    /** Ambient light switched to red by CareDrive (restored afterwards). */
+    val ambientRed: Boolean = false,
 ) {
     companion object { const val HR_WINDOW_MS = 30 * 60_000L }
 }

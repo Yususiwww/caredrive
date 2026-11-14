@@ -16,8 +16,10 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 
 /** Messages each side may send. Anything else is dropped. */
 export const ALLOWED = {
-  phone: new Set(['condition', 'live', 'ihrn', 'drive', 'advance', 'scenario']),
-  car: new Set(['status']),
+  // pulse: watch pulse state; drowsy / speed / answer: demo-only injections (see docs/protocol.md).
+  phone: new Set(['condition', 'live', 'ihrn', 'drive', 'advance', 'scenario', 'pulse', 'drowsy', 'speed', 'answer']),
+  // call: ask the phone to reach contacts / open the 119 dialer; play: open a playlist; ask: question + answer for the log.
+  car: new Set(['status', 'call', 'play', 'ask']),
 };
 
 export function createRelay({ port = PORT, log = console.log } = {}) {

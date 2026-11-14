@@ -159,6 +159,26 @@
   .grid.c2 { grid-template-columns: repeat(2, 1fr); }
   .wide { width: 100%; }
 
+  /* Call / playback banners and the event log */
+  .notice { display: none; margin: 0 12px 12px; padding: 20px; border-radius: var(--r-card); background: var(--surface); }
+  .notice.show { display: block; }
+  .notice strong { display: block; font-size: 1.125rem; line-height: 1.45; letter-spacing: -0.02em; }
+  .notice p { margin: 4px 0 0; font-size: .875rem; color: var(--ink3); }
+  #callCard { background: var(--danger-bg); }
+  #callCard strong { color: var(--danger-ink); }
+  #playCard strong { color: var(--accent-ink); }
+  .log { list-style: none; margin: 16px 0 0; padding: 0; }
+  .log li { display: grid; grid-template-columns: 52px 1fr; gap: 4px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .log li:first-child { border-top: 0; }
+  .log time { color: var(--ink3); font-size: .875rem; }
+  .log b { font-weight: 600; }
+  .log span { grid-column: 2; color: var(--ink2); font-size: .875rem; }
+  .log .empty { display: block; color: var(--ink3); font-size: .9375rem; border: 0; }
+  input[type=text], input[type=tel] {
+    font: inherit; font-weight: 600; font-size: 1rem; color: var(--ink); background: var(--fill); border: 0;
+    border-radius: var(--r-ctl); padding: 10px 14px; width: 11em; text-align: right;
+  }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -187,6 +207,21 @@
       <div class="item"><dt>스트레스</dt><dd id="carStress">-</dd></div>
       <div class="item"><dt>최근 동작</dt><dd id="carEvent" class="soft">-</dd></div>
     </dl>
+  </section>
+
+  <section class="notice" id="callCard" aria-live="assertive">
+    <strong id="callText"></strong>
+    <p id="callNote"></p>
+  </section>
+  <section class="notice" id="playCard" aria-live="polite">
+    <strong id="playText"></strong>
+    <p>차가 먼저 묻고, 운전자가 좋다고 할 때만 틀어요</p>
+  </section>
+
+  <section class="card" id="logCard">
+    <h2>이상 기록</h2>
+    <p class="desc">시각, 종류, 차에서 받은 대답을 남겨요</p>
+    <ul class="log" id="eventLog"><li class="empty">아직 기록이 없어요</li></ul>
   </section>
 
   <section class="card">
@@ -236,6 +271,19 @@
   </section>
 
   <section class="card">
+    <h2>보호자와 음악</h2>
+    <p class="desc">시연용 값이에요. 실제로 전화나 문자를 보내지 않아요</p>
+    <div class="list">
+      <div class="item"><label class="label" for="guardianName">보호자 이름</label><input id="guardianName" type="text" value="엄마" autocomplete="off"></div>
+      <div class="item"><label class="label" for="guardianPhone">보호자 번호</label><input id="guardianPhone" type="tel" value="010-0000-0000" autocomplete="off"></div>
+      <hr class="divider">
+      <div class="item"><label class="label" for="playlist">플레이리스트</label>
+        <select id="playlist"><option>편안한 플레이리스트</option><option>좋아하는 노래</option><option>자연의 소리</option></select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>시연 도구</h2>
     <p class="desc">실제 차에서는 기어와 시간을 차가 알려줘요</p>
     <div class="group">
@@ -256,6 +304,26 @@
     <div class="group">
       <h3>워치 알림</h3>
       <button class="danger wide" id="sendIhrn">부정맥 알림 보내기</button>
+      <div class="grid c2" style="margin-top:8px">
+        <button class="danger" id="pulseAbsent">맥박 없음</button>
+        <button id="pulsePresent">맥박 돌아옴</button>
+        <button id="pulseOff">워치 벗음</button>
+        <button id="pulseWeak">신호 약함</button>
+      </div>
+    </div>
+    <div class="group">
+      <h3>졸음 신호 넣기 (시연용: 실제로는 차 핸들과 워치 신호)</h3>
+      <div class="grid c2">
+        <button id="drowsySignal">졸음 신호</button>
+        <button id="drowsyClear">졸음 신호 끄기</button>
+      </div>
+    </div>
+    <div class="group">
+      <h3>시계 빠르기 (3분 타이머 시연용)</h3>
+      <div class="grid c2">
+        <button id="speed10">10배 빠르게</button>
+        <button id="speed1">실제 시간</button>
+      </div>
     </div>
     <div class="group">
       <button class="accent wide" id="scenario">시나리오 재생하기</button>
@@ -270,7 +338,57 @@
   const REASON = {
     NONE: '', HR_SUSTAINED: '심박 높음 지속', STRESS_HIGH: '스트레스 높음 지속', HR_HIGH: '심박 매우 높음', HR_LOW: '심박 매우 낮음',
     IHRN_NEW: '부정맥 알림', GLUCOSE_LOW: '저혈당', BREAK_DUE: '휴식 시간', BREAK_OVERDUE: '휴식 시간 초과',
+    NO_PULSE: '맥박 없음', DROWSY: '졸음',
   };
+  const ASK = { CARDIAC_CHECK: '심장 확인 질문', NO_PULSE: '맥박 없음', STRESS_TALK: '긴장 대화', DROWSY: '졸음 질문' };
+  const ANSWER = {
+    help: '도움이 필요해요', ok: '괜찮아요', none: '대답 없음', rest: '쉬어 갈게요', play: '좀 그래요 · 음악 재생', pulse_back: '맥박이 다시 잡힘',
+  };
+
+  // Event log: newest first. Kept on this page only (a real phone app stores it with the health record).
+  const events = [];
+  function logEvent(kind, detail) {
+    const d = new Date();
+    events.unshift({ t: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, kind, detail });
+    $('eventLog').innerHTML = events.slice(0, 30).map((e) =>
+      `<li><time>${e.t}</time><b>${e.kind}</b>${e.detail ? `<span>${e.detail}</span>` : ''}</li>`).join('');
+  }
+  const guardian = () => $('guardianName').value.trim() || '보호자';
+
+  function onCall(m) {
+    const to = Array.isArray(m.to) ? m.to : [m.to];
+    const why = REASON[m.reason] ?? m.reason ?? '';
+    let text, note = '시연: 실제로 걸거나 보내지 않아요';
+    if (m.stage === 'pre_alert') {
+      text = `보호자 ${guardian()}에게 미리 알림 문자 보냄`;
+      note = `위치 포함 · ${note}`;
+      logEvent('보호자 미리 알림', `${why} · 1분 동안 대답 없음`);
+    } else if (m.stage === 'cancel') {
+      text = '연락을 취소했어요';
+      note = `보호자 ${guardian()}에게 괜찮다고 알렸어요 · 시연`;
+      logEvent('연락 취소', why);
+    } else {
+      const parts = [];
+      if (to.includes('contacts')) parts.push(`보호자 ${guardian()}에게 전화 거는 중`);
+      if (to.includes('119_dial') || to.includes('119')) parts.push('119 다이얼러 준비됨(누르면 연결)');
+      text = parts.join(' · ');
+      note = `(${note})`;
+      logEvent('연락', `${why} · ${parts.join(' · ')}`);
+    }
+    $('callText').textContent = text;
+    $('callNote').textContent = note;
+    $('callCard').classList.add('show');
+    $('callCard').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  function onPlay(m) {
+    $('playText').textContent = `♪ ${$('playlist').value} 재생 중`;
+    $('playCard').classList.add('show');
+    $('playCard').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    logEvent('음악', `${$('playlist').value} 재생`);
+  }
+  function onAsk(m) {
+    logEvent(ASK[m.ask] ?? m.ask, m.answer ? `차에서 받은 대답: ${ANSWER[m.answer] ?? m.answer}` : '차가 운전자에게 묻는 중');
+  }
 
   let ws = null;
   const send = (msg) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); };
@@ -286,6 +404,9 @@
         if (m.car) { sendCondition(); sendLive(); }
       }
       if (m.type === 'status') showStatus(m);
+      if (m.type === 'call') onCall(m);
+      if (m.type === 'play') onPlay(m);
+      if (m.type === 'ask') onAsk(m);
     };
   }
 
@@ -295,7 +416,8 @@
     $('carLevel').textContent = label;
     $('carLevel').style.color = `var(${color})`;
     $('carReason').textContent = REASON[s.reason] ?? s.reason;
-    $('carDriving').textContent = s.parked ? '정차' : `${s.drivingMin}분째 · 다음 휴식 ${Math.max(0, s.nextBreakInMin)}분`;
+    const speed = s.speedKmh != null ? ` · ${s.speedKmh}km/h` : '';
+    $('carDriving').textContent = (s.parked ? '정차' : `${s.drivingMin}분째 · 다음 휴식 ${Math.max(0, s.nextBreakInMin)}분`) + speed + (s.hazardOn ? ' · 비상등' : '');
     $('carEvent').textContent = s.lastEvent ?? '-';
     $('carStress').textContent = (s.stress ?? '-') + (s.mood ? ` · 기분 ${MOOD[s.mood]}` : '');
   }
@@ -316,9 +438,11 @@
   const sendCondition = () => send({ type: 'condition', condition: condition() });
 
   let jitter = 0;
+  // Watch pulse state: no heart rate is sent while there is no pulse or the watch is off.
+  let pulse = 'present';
   const sendLive = () => send({
     type: 'live',
-    hr: +$('hr').value + jitter,
+    hr: pulse === 'absent' || pulse === 'offwrist' ? null : +$('hr').value + jitter,
     glucose: $('glucoseOn').checked ? +$('glucose').value : null,
     rmssd: $('hrvOn').checked ? +$('rmssd').value : null,
   });
@@ -355,6 +479,25 @@
   $('adv10').onclick = () => send({ type: 'advance', minutes: 10 });
   $('adv30').onclick = () => send({ type: 'advance', minutes: 30 });
   $('scenario').onclick = () => send({ type: 'scenario' });
+  const setPulse = (state, kind) => {
+    pulse = state;
+    send({ type: 'pulse', state });
+    logEvent(kind, state === 'absent' ? '워치 착용 중 · 맥박이 잡히지 않음' : '');
+    if (state === 'present') { $('callCard').classList.remove('show'); sendLive(); }
+  };
+  $('pulseAbsent').onclick = () => setPulse('absent', '맥박 없음');
+  $('pulsePresent').onclick = () => setPulse('present', '맥박 돌아옴');
+  $('pulseOff').onclick = () => setPulse('offwrist', '워치 벗음');
+  $('pulseWeak').onclick = () => setPulse('weak', '워치 신호 약함');
+  $('drowsySignal').onclick = () => {
+    // Demo stand-in for car steering + watch: 12 s without steering then a jerk, heart rate 10 below resting.
+    send({ type: 'drowsy', steeringIdleSec: 12, hrDrop: 10 });
+    logEvent('졸음 신호', '시연 주입: 조향 없음 12초 · 심박 10 낮음');
+  };
+  $('drowsyClear').onclick = () => send({ type: 'drowsy', clear: true });
+  $('speed10').onclick = () => send({ type: 'speed', x: 10 });
+  $('speed1').onclick = () => send({ type: 'speed', x: 1 });
+  $('sendIhrn').addEventListener('click', () => logEvent('부정맥 알림', '삼성 헬스 불규칙 심박 알림'));
 
   // A watch reports heart rate about once a second. Real heart rate is never flat:
   // it drifts slowly (random walk pulled back to the slider) and rises and falls with breathing (~5 s).

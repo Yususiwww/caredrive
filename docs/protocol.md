@@ -17,13 +17,32 @@
 | `drive` | `driving: true / false / null` | 시연용 주행 상태 덮어쓰기. `null`이면 실제 기어 사용 |
 | `advance` | `minutes` | 시연용: 시간을 앞으로 감기 |
 | `scenario` | – | 시연용: 자동 시나리오 재생 |
+| `pulse` | `state`: `present` / `absent` / `offwrist` / `weak` | 워치 맥박 상태. `absent`(착용 중인데 맥박이 안 잡힘)만 질문과 3분 타이머를 시작한다. `offwrist`(벗음)·`weak`(신호 약함)는 말만 하고 단계를 올리지 않는다. 같은 값이 반복되면 무시 |
+| `drowsy` | `steeringIdleSec`, `hrDrop`, 또는 `clear: true` | **시연용 주입.** 실차에서는 차 핸들 신호와 워치 심박으로 계산한다. `steeringIdleSec` 10 이상 = "조향 없음 뒤 큰 수정" 1회(5분 유지), `hrDrop` 8 이상 = 안정 심박보다 낮은 상태가 지속됨 |
+| `speed` | `x` (1–60) | **시연용** 시계 빠르기. 3분 타이머를 짧게 보여 줄 때 `10` |
+| `answer` | `ask`, `yes` | **시연용**: 폰에서 차 질문에 대신 답하기 (차 버튼과 같은 처리) |
 
 ## 차 → 폰
 
 | type | 필드 |
 |---|---|
 | `status` | `level`(L0_NORMAL…L3_STOPPED), `reason`, `parked`, `drivingMin`, `nextBreakInMin`, `grade`, `stress`, `mood`, `lastEvent` |
-| `call` | `to`: `"119"`. 차에서 10초 카운트다운(취소 가능)이 끝나면 보낸다. 실제 전화는 폰이 건다 |
+| `call` | `to`(배열), `reason`, `stage`, `location`(`{lat, lon}`, 알 때만) | 폰에 연락을 요청한다. 실제 전화·문자는 폰이 한다. 아래 표 |
+| `play` | `playlist`: `"calm"` | 운전자가 긴장 대화에서 "좀 그래요"를 누른 뒤에만 보낸다. 폰이 정해 둔 플레이리스트를 연다(자동 재생 없음) |
+| `ask` | `ask`: `CARDIAC_CHECK` / `NO_PULSE` / `STRESS_TALK` / `DROWSY`, `answer`: `null`(묻는 중) / `help` / `ok` / `none`(무응답) / `rest` / `play` / `pulse_back` | 폰의 이상 기록용. 대답 내용만 남기고 분석하지 않는다 |
+
+`status`에는 다음도 들어간다: `ask`, `secondsLeft`, `helpRequested`, `contacting`, `nowPlaying`, `drowsiness`, `speedKmh`, `hazardOn`, `brakeOn`, `pulse`.
+
+### `call` 단계
+
+| `stage` | `to` | 언제 | 폰이 하는 일 |
+|---|---|---|---|
+| `pre_alert` | `["contacts"]` | 맥박 없음 60초 무응답 | 보호자에게 위치가 담긴 미리 알림 문자 |
+| `call` | `["contacts", "119_dial"]` | 맥박 없음 180초 무응답, 또는 "도움이 필요해요"(30초 무응답 포함) 뒤 기어 P | 보호자에게 전화(`CALL_PHONE`), **119는 다이얼러에 번호를 채워 띄움**(일반 앱은 긴급번호를 바로 걸 수 없다). 119·112 자동 문자는 사용자가 미리 동의한 경우만, 시연에서는 끔 |
+| `call` | `["119_dial"]` | 정차 후 화면의 119 버튼(10초 카운트다운, 취소 가능) | 119 다이얼러 |
+| `cancel` | 앞과 같음 | 운전자가 "괜찮아요"(미리 알림 뒤) 또는 연락 중 화면의 취소 | 보호자에게 괜찮다고 알림 |
+
+시연(폰 시뮬레이터)은 실제로 걸거나 보내지 않고 "보호자 엄마에게 전화 거는 중 · 119 다이얼러 준비됨(누르면 연결)"을 보여 준다.
 
 ## 서버 → 양쪽
 

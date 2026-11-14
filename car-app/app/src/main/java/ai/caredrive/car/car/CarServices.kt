@@ -19,6 +19,12 @@ import ai.pleos.playground.vehicle.constant.area.SeatValue
 import ai.pleos.playground.vehicle.constant.control.VehicleGear
 import ai.pleos.playground.vehicle.constant.unit.TemperatureUnit
 import ai.pleos.playground.vehicle.listener.GearSelectionListener
+import ai.pleos.playground.vehicle.listener.BrakePedalStatusListener
+import ai.pleos.playground.vehicle.listener.SteeringWheelAngleListener
+import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
+import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
+import ai.pleos.playground.vehicle.constant.control.LightSwitch
+import ai.pleos.playground.vehicle.api.model.area.SeatArea as LightArea
 import ai.caredrive.car.model.Level
 import android.content.Context
 import android.media.AudioManager
@@ -36,6 +42,7 @@ class CarServices(
     private val onEvent: (String) -> Unit,
     private val onGear: (VehicleGear) -> Unit,
     private val onLocation: (CurrentLocationInfo) -> Unit = {},
+    private val onVehicle: (VehicleSignal) -> Unit = {},
 ) {
     private val app = context.applicationContext
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -55,6 +62,19 @@ class CarServices(
     private val gearListener = object : GearSelectionListener {
         override fun onSelected(gear: VehicleGear?) { gear?.let(onGear) }
         override fun onFailed(e: Exception) = report("기어 상태를 읽지 못했어요", e)
+    }
+
+    private val turnListener = object : TurnSignalStateListener {
+        override fun onTurnSignalStateUpdated(value: TurnSignalValue?) { main.post { onVehicle(VehicleSignal.Turn(value?.takeIf { it != TurnSignalValue.OFF }?.name)) } }
+        override fun onFailed(e: Exception) = report("방향지시등 상태를 읽지 못했어요", e)
+    }
+    private val brakeListener = object : BrakePedalStatusListener {
+        override fun onBrakePedalStatusUpdated(pressed: Boolean?) { main.post { onVehicle(VehicleSignal.Brake(pressed)) } }
+        override fun onFailed(e: Exception) = report("브레이크 상태를 읽지 못했어요", e)
+    }
+    private val steeringListener = object : SteeringWheelAngleListener {
+        override fun onSteeringWheelAngleUpdated(deg: Float?) { deg?.let { main.post { onVehicle(VehicleSignal.Steering(it)) } } }
+        override fun onFailed(e: Exception) = report("핸들 각도를 읽지 못했어요", e)
     }
 
     private val naviListener = object : NaviHelperEventListener {
@@ -81,6 +101,11 @@ class CarServices(
         vehicle.initialize()
         vehicle.getGear().registerGearSelection(gearListener)
         vehicle.getGear().getCurrentGearSelectionState({ gear -> gear?.let(onGear) }, { report("기어 조회 실패", it) })
+        // Each signal on its own: one failing (permission, unsupported car) never stops the others.
+        guard("방향지시등") { vehicle.getTurnSignal().registerTurnSignalState(turnListener) }
+        guard("브레이크") { vehicle.getBrake().registerBrakePedalStatus(brakeListener) }
+        guard("핸들") { vehicle.getSteeringWheel().registerSteeringWheelAngle(steeringListener) }
+        startCarProperties()
 
         navi.initialize(
             onConnected = {
@@ -103,6 +128,10 @@ class CarServices(
 
     fun stop() {
         vehicle.getGear().unregisterGearSelection(gearListener)
+        guard("방향지시등") { vehicle.getTurnSignal().unregisterTurnSignalState(turnListener) }
+        guard("브레이크") { vehicle.getBrake().unregisterBrakePedalStatus(brakeListener) }
+        guard("핸들") { vehicle.getSteeringWheel().unregisterSteeringWheelAngle(steeringListener) }
+        guard("차량 속성") { carProps?.disconnect() }
         vehicle.release()
         navi.removeListener(naviListener)
         navi.release()
@@ -114,13 +143,15 @@ class CarServices(
      * Level sound before the spoken message, so the level is clear without looking:
      * one beep for caution, two for warning, three after stopping. Then [then] (usually speech).
      */
-    fun chime(level: Level, then: () -> Unit) {
-        val beeps = when (level) {
-            Level.L0_NORMAL -> 0
-            Level.L1_CAUTION -> 1
-            Level.L2_WARNING -> 2
-            Level.L3_STOPPED -> 3
-        }
+    fun chime(level: Level, then: () -> Unit) = beep(when (level) {
+        Level.L0_NORMAL -> 0
+        Level.L1_CAUTION -> 1
+        Level.L2_WARNING -> 2
+        Level.L3_STOPPED -> 3
+    }, then)
+
+    /** [beeps] short beeps, then [then]. */
+    fun beep(beeps: Int, then: () -> Unit) {
         if (tones == null || beeps == 0) { then(); return }
         repeat(beeps) { i -> main.postDelayed({ tones.startTone(ToneGenerator.TONE_PROP_BEEP, BEEP_MS) }, i * BEEP_GAP_MS) }
         main.postDelayed(then, beeps * BEEP_GAP_MS + 150)
@@ -246,6 +277,69 @@ class CarServices(
         }
     }
 
+    // --- Ambient and cabin light (Pleos Light) ------------------------------------------------------
+
+    /** Colors before CareDrive turned the ambient light red, restored by [ambientRed] (false). */
+    private val savedColors = mutableMapOf<LightArea, Int>()
+
+    /** Ambient light red for an emergency, or back to the driver's own color. */
+    fun ambientRed(on: Boolean) = guard("앰비언트 조명") {
+        val light = vehicle.getLight()
+        light.checkAmbientLightBrightnessColorCapabilities({ _, areas ->
+            if (areas.isEmpty()) { onEvent("앰비언트 조명 미지원"); return@checkAmbientLightBrightnessColorCapabilities }
+            areas.forEach { area ->
+                if (on) {
+                    light.getAmbientLightBrightnessColor(area, { c ->
+                        if (c != null && c != RED && area !in savedColors) savedColors[area] = c
+                        light.setAmbientLightBrightnessColor(area, RED, { _, _ -> onEvent("실내 조명을 붉게 바꿨어요") }, { report("조명 색 변경 실패", it) })
+                    }, { report("조명 색 조회 실패", it) })
+                } else {
+                    // Saved color lost (app restarted while red): fall back to the default ambient color.
+                    val back = savedColors.remove(area) ?: DEFAULT_AMBIENT
+                    light.setAmbientLightBrightnessColor(area, back, { _, _ -> onEvent("실내 조명을 원래대로 돌렸어요") }, { report("조명 복원 실패", it) })
+                }
+            }
+        }, { report("앰비언트 조명 확인 실패", it) })
+    }
+
+    /** Cabin light on after stopping in an emergency (helps rescuers), off when it is over. */
+    fun cabinLight(on: Boolean) = guard("실내등") {
+        vehicle.getLight().setCabinLightSwitch(if (on) LightSwitch.ON else LightSwitch.OFF,
+            { v -> onEvent(if (v == LightSwitch.ON) "실내등을 켰어요" else "실내등을 껐어요") },
+            { report("실내등 설정 실패", it) })
+    }
+
+    // --- AAOS car properties: speed and hazard lights (Pleos SDK has neither) -----------------------
+
+    private var carProps: android.car.Car? = null
+
+    /** Vehicle speed and hazard lights from AAOS CarPropertyManager. Needs CAR_SPEED (runtime) and CAR_EXTERIOR_LIGHTS. */
+    fun startCarProperties() = guard("차량 속성") {
+        carProps?.disconnect()
+        val car = android.car.Car.createCar(app) ?: run { onEvent("차량 속성 서비스 없음"); return@guard }
+        carProps = car
+        val pm = car.getCarManager(android.car.Car.PROPERTY_SERVICE) as android.car.hardware.property.CarPropertyManager
+        val cb = object : android.car.hardware.property.CarPropertyManager.CarPropertyEventCallback {
+            override fun onChangeEvent(v: android.car.hardware.CarPropertyValue<*>) {
+                val value = v.value
+                main.post {
+                    when (v.propertyId) {
+                        PERF_VEHICLE_SPEED -> (value as? Float)?.let { onVehicle(VehicleSignal.Speed(Math.round(it * 3.6f))) }
+                        HAZARD_LIGHTS_STATE -> (value as? Int)?.let { onVehicle(VehicleSignal.Hazard(it == 1)) }
+                    }
+                }
+            }
+            override fun onErrorEvent(propId: Int, zone: Int) { Log.w(TAG, "car property error $propId") }
+        }
+        guard("속도") { pm.registerCallback(cb, PERF_VEHICLE_SPEED, android.car.hardware.property.CarPropertyManager.SENSOR_RATE_NORMAL) }
+        guard("비상등") { pm.registerCallback(cb, HAZARD_LIGHTS_STATE, android.car.hardware.property.CarPropertyManager.SENSOR_RATE_ONCHANGE) }
+    }
+
+    /** Run [block]; any failure (missing permission, unsupported car, missing library) is shown, never a crash. */
+    private inline fun guard(what: String, block: () -> Unit) {
+        try { block() } catch (t: Throwable) { Log.w(TAG, "$what 실패", t); onEvent("$what 사용 불가: ${t.javaClass.simpleName}") }
+    }
+
     private fun report(msg: String, e: Throwable) {
         Log.w(TAG, msg, e)
         onEvent("$msg: ${e.javaClass.simpleName}")
@@ -256,5 +350,20 @@ class CarServices(
         private const val COMFORT_FLOOR_C = 20f
         private const val BEEP_MS = 160
         private const val BEEP_GAP_MS = 280L
+        private const val RED = 0xFF0000
+        /** Pleos Connect default ambient color (cyan). */
+        private const val DEFAULT_AMBIENT = 0x00E5FF
+        /** android.car VehiclePropertyIds (stable AAOS values). */
+        const val PERF_VEHICLE_SPEED = 0x11600207
+        const val HAZARD_LIGHTS_STATE = 0x11400E03
     }
+}
+
+/** Vehicle signals CareDrive reads and shows. */
+sealed interface VehicleSignal {
+    data class Turn(val side: String?) : VehicleSignal
+    data class Brake(val pressed: Boolean?) : VehicleSignal
+    data class Steering(val deg: Float) : VehicleSignal
+    data class Speed(val kmh: Int) : VehicleSignal
+    data class Hazard(val on: Boolean) : VehicleSignal
 }

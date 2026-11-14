@@ -7,6 +7,8 @@ plugins {
 android {
     namespace = "ai.caredrive.car"
     compileSdk = 37
+    // AAOS car properties (vehicle speed, hazard lights): Pleos SDK has no API for these.
+    useLibrary("android.car")
 
     defaultConfig {
         applicationId = "ai.caredrive.car"

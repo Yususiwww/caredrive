@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /**
@@ -32,7 +33,7 @@ import androidx.compose.ui.unit.sp
  * One variable font file; each weight picks its point on the weight axis.
  */
 val AstaSans = FontFamily(
-    listOf(400, 500, 700, 800).map { w ->
+    listOf(400, 500, 600, 700, 800).map { w ->
         Font(R.font.asta_sans, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
     }
 )
@@ -40,8 +41,8 @@ val AstaSans = FontFamily(
 /**
  * Colour tokens. A TDS grey scale, one blue accent for actions and the chosen option, and level
  * colours that only ever mean a level (ISO 2575: green normal, yellow/orange caution, red danger).
- * Level is never colour alone: see [LevelIcon]. Two palettes share the same names; light is the
- * default because the Pleos system chrome around the app is light.
+ * Level is never colour alone: see [LevelIcon]. Two palettes share the same names. Dark is the
+ * default (design D, cockpit instrument panel); light stays selectable with `--es theme light`.
  */
 @Immutable
 class CarePalette(
@@ -70,6 +71,12 @@ class CarePalette(
     /** Caution and warning as text or thin lines: yellow and orange text fail contrast on white. */
     val CautionText: Color,
     val WarningText: Color,
+    /** Gauge track (unfilled arc), minor ticks and major ticks. */
+    val GaugeTrack: Color,
+    val Tick: Color,
+    val TickMajor: Color,
+    /** Edge of the secondary button and signal chips. */
+    val ControlEdge: Color,
 ) {
     /** Mark inside the yellow and orange level shapes; the same on both themes because it sits on the fill. */
     val OnLight = Color(0xFF191F28) // TDS grey900
@@ -112,49 +119,71 @@ val LightPalette = CarePalette(
     DangerContainer = Color(0xFFD22030), // red700, white text 5.2:1
     CautionText = Color(0xFFA15C00), // dark amber, 5.2:1 on white
     WarningText = Color(0xFFC2410C), // dark orange, 5.2:1 on white
+    GaugeTrack = Color(0xFFE5E8EB), // grey200
+    Tick = Color(0xFFD1D6DB), // grey300
+    TickMajor = Color(0xFF8B95A1), // grey500
+    ControlEdge = Color(0xFFE5E8EB),
 )
 
+/** Design D "콕핏 계기판": near-black panel, hairline rules, thin ticks. */
 val DarkPalette = CarePalette(
     isLight = false,
-    Background = Color(0xFF0F1115),
-    BackdropGlow = Color(0xFF22262E),
-    BackdropEdge = Color(0xFF0B0D10),
-    Surface = Color(0xFF1B1E24),
-    SurfaceHigh = Color(0xFF30343D),
-    Hairline = Color(0xFF4E5968), // grey700
-    TextTertiary = Color(0xFF8B95A1), // grey500, 5.6:1 on Surface
-    TextSecondary = Color(0xFFB0B8C1), // grey400
-    TextPrimary = Color(0xFFF2F4F6), // grey100
-    Accent = Color(0xFF3182F6),
+    Background = Color(0xFF07090C),
+    BackdropGlow = Color(0xFF10151B),
+    BackdropEdge = Color(0xFF07090C),
+    Surface = Color(0xFF0B0F13),
+    SurfaceHigh = Color(0xFF11161C),
+    Hairline = Color(0xFF1E252D),
+    TextTertiary = Color(0xFF8B95A1), // 6.3:1 on the panel
+    TextSecondary = Color(0xFF9AA4AF),
+    TextPrimary = Color(0xFFEEF1F4),
+    Accent = Color(0xFF1B64DA), // blue600, white text 5.3:1
     OnAccent = Color.White,
-    Normal = Color(0xFF03B26C),
+    Normal = Color(0xFF2FD08E),
     Caution = Color(0xFFFFC342),
-    Warning = Color(0xFFFE9800),
-    Danger = Color(0xFFF04452),
-    DangerContainer = Color(0xFF8A1C27), // white text 9:1
+    Warning = Color(0xFFFFA01F),
+    Danger = Color(0xFFFF7A8C),
+    DangerContainer = Color(0xFFD22030), // white text 5.2:1
     CautionText = Color(0xFFFFC342),
-    WarningText = Color(0xFFFE9800),
+    WarningText = Color(0xFFFFA01F),
+    GaugeTrack = Color(0xFF161C22),
+    Tick = Color(0xFF36404B),
+    TickMajor = Color(0xFF6B7684),
+    ControlEdge = Color(0xFF2E3740),
 )
 
-val LocalCarePalette = staticCompositionLocalOf { LightPalette }
+val LocalCarePalette = staticCompositionLocalOf { DarkPalette }
 
 /** Current palette. Read it in composition; inside a Canvas lambda, read it once before drawing. */
 val CareColor: CarePalette
     @Composable @ReadOnlyComposable get() = LocalCarePalette.current
 
-/** Old or missing watch data is dimmed, never shown as if it were current. */
-/** Page background: a still, soft grey gradient (no motion). Light glows from the top left like a studio backdrop. */
+/**
+ * Page background, still (no motion). Light: a soft studio glow from the top left. Dark (design D):
+ * a faint wash from above the top edge, like the light falling on an instrument cluster.
+ */
 fun Modifier.careBackdrop(p: CarePalette) = drawBehind {
     drawRect(p.BackdropEdge)
-    drawRect(
-        Brush.radialGradient(
-            0f to p.BackdropGlow, 0.45f to p.BackdropGlow.copy(alpha = 0.85f).compositeOver(p.BackdropEdge), 1f to p.BackdropEdge,
-            center = Offset(size.width * 0.32f, size.height * 0.18f),
-            radius = maxOf(size.width, size.height) * 0.95f,
+    if (p.isLight) {
+        drawRect(
+            Brush.radialGradient(
+                0f to p.BackdropGlow, 0.45f to p.BackdropGlow.copy(alpha = 0.85f).compositeOver(p.BackdropEdge), 1f to p.BackdropEdge,
+                center = Offset(size.width * 0.32f, size.height * 0.18f),
+                radius = maxOf(size.width, size.height) * 0.95f,
+            )
         )
-    )
+    } else {
+        drawRect(
+            Brush.radialGradient(
+                0f to p.BackdropGlow, 1f to p.BackdropEdge,
+                center = Offset(size.width * 0.5f, -size.height * 0.1f),
+                radius = size.width * 0.6f,
+            )
+        )
+    }
 }
 
+/** Old or missing watch data is dimmed, never shown as if it were current. */
 const val StaleAlpha = 0.35f
 
 /** 4-based spacing scale. Every padding and gap comes from here. */
@@ -196,8 +225,8 @@ object CareType {
     /** Heart rate in the narrow status card. */
     val numberCompact = base.copy(fontSize = 72.sp, lineHeight = 80.sp, fontWeight = FontWeight.Bold)
 
-    val title = base.copy(fontSize = 76.sp, lineHeight = 92.sp, fontWeight = FontWeight.ExtraBold)
-    val titleCompact = base.copy(fontSize = 62.sp, lineHeight = 76.sp, fontWeight = FontWeight.ExtraBold)
+    val title = base.copy(fontSize = 76.sp, lineHeight = 92.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.03).em)
+    val titleCompact = base.copy(fontSize = 62.sp, lineHeight = 76.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.03).em)
 
     val body = base.copy(fontSize = 48.sp, lineHeight = 62.sp, fontWeight = FontWeight.Medium)
     val bodyCompact = base.copy(fontSize = 44.sp, lineHeight = 56.sp, fontWeight = FontWeight.Medium)
@@ -209,15 +238,26 @@ object CareType {
     /** Parked-only detail (chart legend, event line). Never below the 30sp floor. */
     val caption = base.copy(fontSize = 30.sp, lineHeight = 42.sp, fontWeight = FontWeight.Medium)
 
+    /** Gauge readouts: tabular figures so digits do not jump as the value changes. */
+    private val tnum = base.copy(fontFeatureSettings = "tnum", letterSpacing = (-0.03).em, fontWeight = FontWeight.SemiBold)
+    val gaugeBig = tnum.copy(fontSize = 150.sp, lineHeight = 150.sp)
+    val gaugeMid = tnum.copy(fontSize = 96.sp, lineHeight = 100.sp)
+    val gaugeSmall = tnum.copy(fontSize = 68.sp, lineHeight = 72.sp)
+    /** The no-pulse countdown, the biggest figure the app ever shows. */
+    val countdown = tnum.copy(fontSize = 180.sp, lineHeight = 184.sp)
+    val countdownCompact = tnum.copy(fontSize = 132.sp, lineHeight = 136.sp)
+    /** Signal chips and gauge captions. */
+    val chip = tnum.copy(fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.em)
+
     /** Debug demo bar only; not part of the product. */
     val debug = base.copy(fontSize = 22.sp, fontWeight = FontWeight.Medium)
 }
 
 private fun TextStyle.asta() = copy(fontFamily = AstaSans)
 
-/** Light by default. [dark] comes from the debug intent or the system night mode (MainActivity). */
+/** Dark (design D) by default. [dark] comes from the debug `--es theme light|dark` extra (MainActivity). */
 @Composable
-fun CareTheme(dark: Boolean = false, content: @Composable () -> Unit) {
+fun CareTheme(dark: Boolean = true, content: @Composable () -> Unit) {
     val p = if (dark) DarkPalette else LightPalette
     val t = Typography()
     val typography = Typography(

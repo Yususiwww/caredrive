@@ -28,7 +28,12 @@ fun LevelIcon(level: Level, color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val w = size.minDimension
         val c = Offset(size.width / 2, size.height / 2)
-        val mark = if (level == Level.L1_CAUTION || level == Level.L2_WARNING) palette.OnLight else Color.White
+        // Dark (design D): every mark is cut out in the panel colour, like a tell-tale lamp.
+        val mark = when {
+            !palette.isLight -> palette.Background
+            level == Level.L1_CAUTION || level == Level.L2_WARNING -> palette.OnLight
+            else -> Color.White
+        }
         val stroke = w * 0.11f
         when (level) {
             Level.L0_NORMAL -> {

@@ -24,8 +24,8 @@ class MessagesTest {
     @Test fun voice_usesTheScreenWords() {
         drivingAlerts.forEach { s ->
             val m = Messages.forState(s)
-            val end = if (m.body.endsWith("?")) "" else "."
-            assertEquals("${m.title}. ${m.body}$end", m.speak)
+            val dot = { t: String -> if (t.endsWith("?")) t else "$t." }
+            assertEquals("${dot(m.title)} ${dot(m.body)}", m.speak)
         }
     }
 

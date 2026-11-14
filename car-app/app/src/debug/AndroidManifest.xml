@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug only: the local relay runs over plain ws:// on the Mac (10.0.2.2 from the emulator). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:usesCleartextTraffic="true" />
+    <application android:usesCleartextTraffic="true">
+        <!-- TEMPORARY design gallery for screenshots of screens without a demo preset. -->
+        <activity android:name="ai.caredrive.car.ui.DesignGalleryActivity" android:exported="true" android:theme="@android:style/Theme.Material.NoActionBar" />
+    </application>
 </manifest>

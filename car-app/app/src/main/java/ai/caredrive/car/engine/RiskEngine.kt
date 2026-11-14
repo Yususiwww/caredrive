@@ -12,6 +12,8 @@ data class LiveSignals(
     val newIhrn: Boolean = false,
     /** 0–100 stress estimate from HRV (see [Hrv]); null without a watch app. */
     val stress: Int? = null,
+    /** Drowsiness score (see [Drowsiness]); only set when a live signal contributed, so it may alert. */
+    val drowsiness: Int? = null,
 )
 
 data class Decision(
@@ -107,12 +109,14 @@ class RiskEngine(private var readiness: Readiness = ConditionRules.assess(Driver
             live.glucose != null && live.glucose < GLUCOSE_LOW -> Reason.GLUCOSE_LOW
             hr != null && hr < HR_VERY_LOW -> Reason.HR_LOW
             hr != null && hr > HR_VERY_HIGH -> Reason.HR_HIGH
+            (live.drowsiness ?: 0) >= Drowsiness.WARNING -> Reason.DROWSY
             nextBreak <= -OVERDUE_MIN -> Reason.BREAK_OVERDUE
             else -> null
         }
         val caution: Reason? = when {
             hrHighMin >= HR_SUSTAINED_MIN -> Reason.HR_SUSTAINED
             stressHighMin >= STRESS_SUSTAINED_MIN -> Reason.STRESS_HIGH
+            (live.drowsiness ?: 0) >= Drowsiness.CAUTION -> Reason.DROWSY
             nextBreak <= 0 -> Reason.BREAK_DUE
             else -> null
         }

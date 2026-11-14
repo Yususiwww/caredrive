@@ -38,7 +38,7 @@ cd relay && npm install && npm start      # 맥에서 http://localhost:8787/ 열
 |---|---|---|
 | `car-app/` | Pleos 차량 앱 (AAOS · Kotlin · Compose) | 4단계: 중계 연결·심박 추이 차트 |
 | `relay/` | 폰 ↔ 차 중계 서버 (Node.js · WebSocket) | 동작 (`npm test`) |
-| `phone-sim/` | 폰 시뮬레이터 웹페이지 (컨디션·심박·혈당·부정맥 알림 입력) | 동작 |
+| `phone-sim/` | 폰 시뮬레이터 웹페이지 (컨디션·심박·혈당·부정맥 알림·맥박 없음·졸음 신호 입력, 이상 기록, 연락·음악 표시) | 동작 |
 | `docs/decisions/` | 결정 기록 | |
 
 ## 판정 로직 (`car-app/.../engine/`)
@@ -54,7 +54,23 @@ cd relay && npm install && npm start      # 맥에서 http://localhost:8787/ 열
 | L2 경고 | 새 부정맥 알림 · 혈당 70 미만 · 심박 <40 또는 >140 · 휴식 30분 초과 · L1이 15분 지속 | 화면 + 음성으로 휴게소 안내 제안 |
 | L3 정차 후 | L2 이후 정차 | 이유별 안내(심전도·당 보충·스트레칭), 보호자 알림, 119 |
 
-"다음에"는 같은 이유를 15분 조용히 하고, 10분 이상 정차하면 연속 운전 시간이 초기화된다. 숫자는 모두 설계 예시이며 의료 자문이 필요하다. 테스트: `./gradlew :app:testDebugUnitTest` (23개).
+L1에는 졸음 점수 40 이상, L2에는 졸음 점수 60 이상(가까운 졸음쉼터를 바로 경유지로)이 더해졌다.
+
+"다음에"는 같은 이유를 15분 조용히 하고, 10분 이상 정차하면 연속 운전 시간이 초기화된다. 숫자는 모두 설계 예시이며 의료 자문이 필요하다.
+
+**차가 묻고 답에 따라 움직이기** (`CheckinEngine`, 설계: [docs/decisions/2026-11-15-응급-대화-졸음-설계.md](docs/decisions/2026-11-15-응급-대화-졸음-설계.md)). 질문은 음성과 화면이 같은 문장이고, 답은 큰 버튼 2개로 받는다.
+
+| 질문 | 언제 | 답과 동작 |
+|---|---|---|
+| 심장 확인 "심장 박동이 평소와 달라요. 괜찮으세요?" | 주행 중 L2 심장 이유(부정맥 알림, 심박 <40·>140, 높은 심박 지속) | **도움이 필요해요** 또는 30초 무응답 → "비상등을 켜고 세워 주세요", 실내 조명 빨강, 가까운 휴게소 경유지 → 기어 P가 되면 폰에 연락 요청(보호자 전화 · 119 다이얼러 준비), 실내등 켜기. **괜찮아요** → 기존 L2 흐름, 15분 다시 묻지 않음 |
+| 맥박 없음 "괜찮으세요? 대답해 주세요." | 워치 착용 중 맥박이 안 잡힘(`pulse: absent`) | 경고음 3번, 실내 조명 빨강, 3분 원형 타이머. 20초마다 다시 물음(첫 1분). 60초: 보호자에게 미리 알림. 180초: 보호자 전화 · 119 다이얼러 준비, 정차 중이면 실내등. **괜찮아요**는 언제든 취소, 맥박이 돌아오면 "맥박이 다시 잡혀요" |
+| (질문 없음) | 워치 벗음 / 신호 약함 | "워치를 다시 차 주세요" / "워치 신호가 약해요"만 말하고 단계를 올리지 않음(오탐 방지) |
+| 긴장 대화 "많이 긴장하신 것 같아요. 힘든 일이 있었나요?" | 주행 중 L1 심박 지속 상승 또는 HRV 스트레스, 다른 경고 없음 | **좀 그래요** → 폰이 플레이리스트를 연다("♪ 편안한 플레이리스트 재생 중"), 공조 시원하게 유지. **괜찮아요** → 호흡 안내만. 어느 쪽이든 15분 다시 묻지 않음. 음악은 묻지 않고 틀지 않는다 |
+| 졸음 "졸음이 올 수 있어요. 잠깐 쉬어 갈까요?" | 졸음 점수 40 이상(L1) | 공조 시원하게. **쉬어 갈게요** → 가까운 쉼터 경유지. **괜찮아요** → 15분 조용히 |
+
+**졸음 점수** (`Drowsiness`, 0–100, 설계 예시): 수면 5시간 미만 +25 / 6시간 30분 미만 +10, 오늘 휴식 간격의 80% 이상 연속 운전 +15, 02–06시 +20 / 14–16시 +10(차 시계), 안정 심박보다 8bpm 이상 낮은 상태 3분 +20, RMSSD가 평소보다 30% 높은 상태 3분 +10, 핸들 +20. 핸들(`SteeringMonitor`, Pleos `SteeringWheel` 각도)은 10초 넘게 조향이 없다가 1.5초 안에 10° 이상 수정 조향이 나오거나(5분간 유지), 1분 반전 횟수(2° 이상)가 평소의 절반 아래로 떨어지면 점수를 더한다. 수면·시간처럼 실시간이 아닌 값만으로는 알리지 않는다(휴식 간격만 앞당김).
+
+테스트: `./gradlew :app:testDebugUnitTest` (58개: 단계·질문 타이밍·연락 단계·졸음 점수·핸들 분석·문구).
 
 ## 폰 시뮬레이터로 시연 (4단계)
 
@@ -78,10 +94,13 @@ cd relay && npm install && npm start
 
 ```bash
 cd relay
-node demo/record.mjs /tmp/caredrive-demo     # 폰 페이지(헤드리스 Chrome) + 차 화면(adb screenrecord) 녹화, 약 80초
+node demo/record.mjs /tmp/caredrive-demo     # 폰 페이지(헤드리스 Chrome) + 차 화면(scrcpy) 녹화, 약 2분
 python3 demo/compose.py /tmp/caredrive-demo  # 나란히 합치고 장면 제목·차 음성 자막 → caredrive-demo.mp4
 ```
 
+- 장면: 1 출발 전 컨디션 → 2 주행(실제 기어 D, 속도 0→60→80) → 3 긴장 대화 → '좀 그래요' → 플레이리스트 → 4 졸음(실제 핸들 신호: 조향 없음 뒤 큰 수정) → '쉬어 갈게요' → 5 부정맥 → 심장 확인 → '도움이 필요해요' → 비상등 표시등 · 감속 · 기어 P → 연락 → 6 맥박 없음 → 60초 미리 알림 → 180초 연락 (3분 타이머를 10배 빠르게, 화면 설명에 표시).
+- 기어·속도·브레이크·핸들은 Virtual Console로 넣은 **차량 신호**라 Pleos 계기판(왼쪽 화면)의 기어·속도도 같이 바뀐다. 부정맥 알림·심박·맥박 없음은 폰 시뮬레이터 값이다.
+- 졸음 장면은 에뮬레이터 시계가 02–06시나 14–16시면 시간대 점수가 더해져 바로 L2(질문 없이 졸음쉼터)로 간다. 그 시간대에는 피해서 녹화한다.
 - 녹화 전 브라우저에 열린 폰 시뮬레이터 탭은 닫는다(중계 서버는 폰 1대만 연결).
 - 영상에 소리는 없고, 차가 말한 문장은 자막으로 들어간다.
 
@@ -94,6 +113,8 @@ adb shell am broadcast -a ai.caredrive.car.DEMO -p ai.caredrive.car --es preset 
 ```
 
 - preset: `predrive` `drive` `break` `tense` `stress` `glucose` `ihrn` `park` `nodata`(워치 데이터 끊김) `scenario`
+- 질문 화면 preset(실제 엔진으로 흐른다): `cardiac`(심장 확인) `nopulse`(맥박 없음 3분 타이머) `stresstalk`(긴장 대화) `drowsy`(졸음 질문) `contacting`(도움 요청 후 정차 → 연락 중)
+- 질문 답하기: `--es answer yes|no` · 맥박 상태: `--es pulse absent|present|offwrist|weak` · 연락 취소: `--ez cancelContact true` · 시계 빠르기: `--ei speed 10`
 - 119 카운트다운 보기: `--ez call119 true` (10초 뒤 폰에 전화 요청, 화면에서 취소 가능)
 - 좁은 창(Pleos 화면 분할) 배치 보기: `--ez compact true` (되돌리기: `--ez compact false`)
 - 개별 값: `--ei hr 110` `--ei glucose 62` `--ez ihrn true` `--ez drive true` `--ei advance 30`(분)
@@ -120,7 +141,25 @@ JDK 17 필요 (Android Studio 내장 JBR 사용 가능). 디버그 빌드 하단
 | 공조 시원하게 | Vehicle HVAC: 전원 켜기 → 운전석 온도 −2℃, 풍량 +2 | 확인 (22→20℃, 3→5단) |
 | 휴게소 안내 | NaviHelper: 현재 위치 → 가장 가까운 휴게소·졸음쉼터 → 목적지 또는 경유지 | 확인 (판교 → 성남졸음쉼터 3.6km) |
 | 주행/정차 | Vehicle Gear 콜백 (경고 중 P → 정차 후 조치) | 확인 |
+| 속도 | AAOS `CarPropertyManager` `PERF_VEHICLE_SPEED` (Pleos SDK에 속도 API 없음, `CAR_SPEED` 권한) | 확인 (0→60→80km/h) |
+| 브레이크 | Vehicle Brake `registerBrakePedalStatus` | 확인 |
+| 핸들 각도 (졸음) | Vehicle SteeringWheel `registerSteeringWheelAngle` | 확인 (부호가 콘솔과 반대) |
+| 실내 조명 빨강 / 복원 | Vehicle Light `setAmbientLightBrightnessColor` | 확인 (콘솔 앰비언트 `#ff0000`) |
+| 실내등 | Vehicle Light `setCabinLightSwitch` | 확인 (무맥박 180초, 정차 중) |
+| 방향지시등 / 비상등 | Vehicle TurnSignal(OFF·LEFT·RIGHT만, 비상등 값 없음), AAOS `HAZARD_LIGHTS_STATE` | 미확인: 콘솔 telltale은 TurnSignal로 오지 않고, `CAR_EXTERIOR_LIGHTS`는 일반 앱에 허용되지 않음. 비상등은 앱이 켤 수 없어 "켜 주세요"라고 말한다 |
 
+- 신호마다 따로 등록하고, 실패하면 화면 "최근 동작"에 "… 사용 불가"로 보인다(앱은 멈추지 않는다).
+- 에뮬레이터에서 차량 신호 넣기: Virtual Console HTTP API. `adb shell cmd car_service inject-vhal-event`는 user 빌드라 막혀 있다(`requires non-user build`), `adb root`도 안 된다.
+
+```bash
+adb forward tcp:8088 tcp:8088
+# 콘솔은 살아 있는 세션이 있어야 쓰기를 받는다(3초 타임아웃): 1초마다
+curl -X POST 'http://127.0.0.1:8088/browser/session?client=demo'
+curl -X PUT  'http://127.0.0.1:8088/vehicle/gear?gear=Drive'          # Park / Reverse / Neutral / Drive
+curl -X PUT  'http://127.0.0.1:8088/vehicle/controls?speed=60&accelerator=30&brake=0&steering=0'   # km/h, %, %, 도
+curl -X PUT  'http://127.0.0.1:8088/vehicle/telltales/simulator?type=TurnSignalLeft&state=Blink&color=Green'   # 계기판 표시등만
+curl         'http://127.0.0.1:8088/vehicle/state'                   # 현재 값(앰비언트 색, 실내등 포함)
+```
 - NaviHelper 3.0.5에는 장소 검색이 없어서, OpenStreetMap의 휴게소·졸음쉼터 1,216곳(`assets/rest_areas.json`, © OpenStreetMap contributors, ODbL)에서 진행 방향 ±70° 안의 가장 가까운 곳을 고른다.
 - 에뮬레이터 주의: 공조 값은 Virtual Console(`adb forward tcp:8088 tcp:8088` → http://127.0.0.1:8088)에서 한 번 값을 바꿔 "publish"해야 앱에서 읽힌다. 그 전에는 `PropertyNotAvailableException`.
 - 공조 영역은 차마다 다르다(전원·풍량은 1열 전체, 온도는 좌석별). 항상 capability로 받은 영역을 쓴다.

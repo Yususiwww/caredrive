@@ -269,6 +269,39 @@ subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
                 "-t", f"{dur:.2f}", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
                 "-c:a", "aac", "-b:a", "192k", str(OUT / "main.mp4")], check=True)
 
+# AI cutaways (staged, labelled): a few seconds of a matching real-life moment at the start of a chapter,
+# while the narrator speaks, before returning to the screens. Files in docs/demo/ai-scenes/inserts/.
+INSERTS_DIR = ROOT / "docs/demo/ai-scenes/inserts"
+INSERT_FOR = [("긴장", "stress_music.mp4"), ("졸음", "drowsy.mp4"), ("정체", "jam_awake.mp4"),
+              ("맥박", "guardian_sms.mp4")]
+cuts = []
+for c in tl["chapters"]:
+    for key, fname in INSERT_FOR:
+        f = INSERTS_DIR / fname
+        if key in c["label"] and f.exists():
+            a = max(0.0, (c["t"] - t0) / 1000) + 0.6
+            cuts.append((f, a, min(4.0, media_len(f))))
+if cuts:
+    lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(lab)
+    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
+    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
+    lab.save(OUT / "insert_label.png")
+    ins = ["-i", str(OUT / "main.mp4"), "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "insert_label.png")]
+    g, last_v = [], "0:v"
+    for k, (f, a, d) in enumerate(cuts):
+        ins += ["-i", str(f)]
+        g.append(f"[{k + 2}:v]scale=1920:1080,fps={FPS},trim=0:{d:.2f},"
+                 f"delogo=x=1690:y=850:w=110:h=110,fade=t=in:d=0.3:alpha=1,fade=t=out:st={d - 0.3:.2f}:d=0.3:alpha=1,"
+                 f"format=rgba,setpts=PTS-STARTPTS+{a:.2f}/TB[i{k}]")
+        g.append(f"[{last_v}][i{k}]overlay=0:0:eof_action=pass:enable='between(t,{a:.2f},{a + d:.2f})'[u{k}]")
+        g.append(f"[u{k}][1:v]overlay=0:0:enable='between(t,{a:.2f},{a + d - 0.2:.2f})'[w{k}x]")
+        last_v = f"w{k}x"
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins, "-filter_complex", ";".join(g),
+                    "-map", f"[{last_v}]", "-map", "0:a", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
+                    "-pix_fmt", "yuv420p", "-c:a", "copy", str(OUT / "main_cut.mp4")], check=True)
+    (OUT / "main_cut.mp4").replace(OUT / "main.mp4")
+
 
 # ---------------------------------------------------------------------------------------------
 def card(path, draw_fn):

@@ -179,10 +179,12 @@ await call('Page.startScreencast', { format: 'jpeg', quality: 85 });
 // Video and sound are two scrcpy sessions: one session doing both came out silent on this emulator,
 // while an audio-only session records the car's voice and chimes reliably. compose.py lines them up.
 const rec = spawn('scrcpy', [
-  '--no-window', '--no-playback', '--no-audio', '--max-size=1920', '--video-bit-rate=12M',
+  '--no-window', '--no-playback', '--no-audio', '--max-size=1920', '--video-bit-rate=12M', '--port=27200:27209',
   `--record=${join(OUT, 'car.mkv')}`,
 ], { env: { ...process.env, ADB } });
-const recAudio = spawn('scrcpy', [
+// Two sessions starting at once fight over the same local port; stagger them and give each its own range.
+await sleep(2500);
+const recAudio = spawn('scrcpy', ['--port=27300:27309',
   '--no-window', '--no-playback', '--no-video', '--audio-source=playback', '--audio-dup',
   `--record=${join(OUT, 'car_audio.mka')}`,
 ], { env: { ...process.env, ADB } });

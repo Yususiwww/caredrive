@@ -271,31 +271,49 @@ subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inputs,
 
 # AI cutaways (staged, labelled): a few seconds of a matching real-life moment at the start of a chapter,
 # while the narrator speaks, before returning to the screens. Files in docs/demo/ai-scenes/inserts/.
+# (file, seek into it, max length). The cardiac chapter borrows the first shot of the emergency sequence
+# (the driver in pain); the rest of that sequence plays later, once the car has actually called.
 INSERTS_DIR = ROOT / "docs/demo/ai-scenes/inserts"
-INSERT_FOR = [("긴장", "stress_music.mp4"), ("졸음", "drowsy.mp4"), ("정체", "jam_awake.mp4"),
-              ("맥박", "guardian_sms.mp4")]
-cuts = []
-for c in tl["chapters"]:
-    for key, fname in INSERT_FOR:
-        f = INSERTS_DIR / fname
-        if key in c["label"] and f.exists():
-            a = max(0.0, (c["t"] - t0) / 1000) + 0.6
-            cuts.append((f, a, min(4.0, media_len(f))))
-if cuts:
+INSERT_FOR = [("긴장", INSERTS_DIR / "stress_music.mp4", 0.0, 4.0),
+              ("졸음", INSERTS_DIR / "drowsy.mp4", 0.0, 4.0),
+              ("정체", INSERTS_DIR / "jam_awake.mp4", 0.0, 4.0),
+              ("심장", EMERGENCY, 0.0, 3.0)]
+EM_HEAD = 3.0  # length of that first shot in emergency.mp4 (scene cut at 3.0 s)
+GUARDIAN = INSERTS_DIR / "guardian_sms.mp4"
+
+
+def label_png(path, lower=None):
+    """Transparent 1920x1080 overlay: 'staged · AI' tag at the top left, optional lower-third line."""
     lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(lab)
     ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
     ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
-    lab.save(OUT / "insert_label.png")
+    if lower:
+        f = font(50, 800)
+        tw = text_w(ld, lower, f)
+        ld.rounded_rectangle((44, H - 168, 44 + tw + 48, H - 76), 46, fill=(0, 0, 0, 140))
+        ld.text((68, H - 154), lower, font=f, fill=(255, 255, 255))
+    lab.save(path)
+    return path
+
+
+cuts = []
+for c in tl["chapters"]:
+    for key, f, ss, mx in INSERT_FOR:
+        if key in c["label"] and f.exists():
+            a = max(0.0, (c["t"] - t0) / 1000) + 0.6
+            cuts.append((f, ss, a, min(mx, media_len(f) - ss)))
+if cuts:
+    label_png(OUT / "insert_label.png")
     ins = ["-i", str(OUT / "main.mp4"), "-loop", "1", "-t", f"{dur:.2f}", "-i", str(OUT / "insert_label.png")]
     g, last_v = [], "0:v"
-    for k, (f, a, d) in enumerate(cuts):
-        ins += ["-i", str(f)]
+    for k, (f, ss, a, d) in enumerate(cuts):
+        ins += ["-ss", f"{ss:.2f}", "-i", str(f)]
         g.append(f"[{k + 2}:v]scale=1920:1080,fps={FPS},trim=0:{d:.2f},"
                  f"delogo=x=1690:y=850:w=110:h=110,fade=t=in:d=0.3:alpha=1,fade=t=out:st={d - 0.3:.2f}:d=0.3:alpha=1,"
                  f"format=rgba,setpts=PTS-STARTPTS+{a:.2f}/TB[i{k}]")
         g.append(f"[{last_v}][i{k}]overlay=0:0:eof_action=pass:enable='between(t,{a:.2f},{a + d:.2f})'[u{k}]")
-        g.append(f"[u{k}][1:v]overlay=0:0:enable='between(t,{a:.2f},{a + d - 0.2:.2f})'[w{k}x]")
+        g.append(f"[u{k}][1:v]overlay=0:0:enable='between(t,{a + 0.1:.2f},{a + d - 0.3:.2f})'[w{k}x]")
         last_v = f"w{k}x"
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins, "-filter_complex", ";".join(g),
                     "-map", f"[{last_v}]", "-map", "0:a", "-c:v", "libx264", "-crf", "18", "-preset", "medium",
@@ -317,6 +335,12 @@ def intro(d, img):
     d.text((160, 530), "차의 운전 신호에, 워치의 몸 신호를 더해요", font=font(54, 700), fill=SUB)
     d.text((160, 860), "Pleos Connect 에뮬레이터 2.1.0의 화면과 소리를 그대로 녹화했어요", font=font(28, 500), fill=MUTE)
     d.text((160, 902), "건강 데이터(수면·심박·부정맥 알림)는 폰 시뮬레이터로 넣은 시험 값이에요", font=font(28, 500), fill=MUTE)
+
+
+BED = ROOT / "docs/demo/music/gymnopedie3_cc0.ogg"   # quiet bed under the whole film (CC0, Wikimedia Commons)
+if music:
+    MUSIC_CREDIT = ("음악: Satie - Gymnopedie No.1, No.3 (CC0, Wikimedia Commons) · "
+                    "Pachelbel - Canon in D, Kevin MacLeod (incompetech.com), CC BY 3.0")
 
 
 def outro(d, img):
@@ -345,66 +369,58 @@ for name, secs in (("intro", INTRO), ("outro", OUTRO)):
                     "-vf", f"fps={FPS},format=yuv420p", "-c:v", "libx264", "-crf", "18",
                     "-c:a", "aac", "-shortest", str(OUT / f"{name}.mp4")], check=True)
 
-# Optional AI opening: cover the generator's sparkle mark, label it as staged, then crossfade on.
-parts = []
-if OPENING.exists():
-    lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ld = ImageDraw.Draw(lab)
-    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
-    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
-    ld.text((64, H - 150), "운전 중, 이런 순간이 온다면", font=font(54, 800), fill=(255, 255, 255))
-    lab.save(OUT / "opening_label.png")
-    op_len = media_len(OPENING)
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OPENING),
-                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(OUT / "opening_label.png"),
-                    "-filter_complex",
-                    "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,7.6)'[o];"
-                    "[1:v]format=rgba,fade=t=out:st=6.6:d=0.6:alpha=1[l];"
-                    "[o][l]overlay=0:0:enable='lt(t,7.4)',format=yuv420p[v];"
-                    "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
-                    "-map", "[v]", "-map", "[a]", "-t", f"{op_len:.2f}", "-c:v", "libx264", "-crf", "18",
-                    "-c:a", "aac", str(OUT / "opening.mp4")], check=True)
-    parts.append((OUT / "opening.mp4", op_len))
-parts += [(OUT / "intro.mp4", INTRO)]
+ENC = ["-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
+       "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
 
-# Optional AI emergency sequence (driver in pain → car sends a signal → guardian's phone → ambulance),
-# cut into the demo right before the cardiac chapter (found by its label, not its position).
-split = None
-chs_t = [(c["t"] - t0) / 1000 for c in tl["chapters"]]
-CARDIAC_I = next((i for i, c in enumerate(tl["chapters"]) if "심장" in c["label"]), None)
-if EMERGENCY.exists() and CARDIAC_I is not None:
-    split = max(0.0, chs_t[CARDIAC_I] - 0.4)
-    em_len = media_len(EMERGENCY)
-    lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ld = ImageDraw.Draw(lab)
-    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
-    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
-    lab.save(OUT / "emergency_label.png")
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(EMERGENCY),
-                    "-loop", "1", "-t", f"{em_len:.2f}", "-i", str(OUT / "emergency_label.png"),
-                    "-filter_complex",
-                    "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,9.6)'[o];"
-                    "[o][1:v]overlay=0:0:enable='lt(t,14)',format=yuv420p[v];"
+
+def ai_clip(src, out, ss, length, lower=None, delogo_until=None):
+    """Staged AI shot, scaled, sparkle mark covered, labelled, with its own ambient sound."""
+    lab = label_png(OUT / f"{out.stem}_label.png", lower)
+    dl = f",delogo=x=1690:y=850:w=110:h=110" + (f":enable='lt(t,{delogo_until})'" if delogo_until else "")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{ss:.2f}", "-i", str(src),
+                    "-loop", "1", "-t", f"{length:.2f}", "-i", str(lab), "-filter_complex",
+                    f"[0:v]scale=1920:1080,fps={FPS}{dl}[o];[o][1:v]overlay=0:0,format=yuv420p[v];"
                     "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
-                    "-map", "[v]", "-map", "[a]", "-t", f"{em_len:.2f}", "-c:v", "libx264", "-crf", "18",
-                    "-c:a", "aac", str(OUT / "emergency.mp4")], check=True)
-    for name, a, b in (("main_a", 0.0, split), ("main_b", split, dur)):
-        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OUT / "main.mp4"),
-                        "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-c:v", "libx264", "-crf", "18",
-                        "-c:a", "aac", "-b:a", "192k", str(OUT / f"{name}.mp4")], check=True)
-    parts += [(OUT / "main_a.mp4", split), (OUT / "emergency.mp4", em_len), (OUT / "main_b.mp4", dur - split)]
-else:
-    parts += [(OUT / "main.mp4", dur)]
-parts += [(OUT / "outro.mp4", OUTRO)]
+                    "-map", "[v]", "-map", "[a]", "-t", f"{length:.2f}", *ENC, str(out)], check=True)
+    return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Edit decision list. The raw recording has long waits (the app idling between scenario steps, the car
+# standing still for the jam check, the 3-minute timer). edit.json next to the recording lists the spans
+# of it to keep; without it the whole recording is used.
+#   keep          [[a, b], ...]  seconds into the recording
+#   emergency_at  play the rest of the emergency sequence after the kept span ending here (the car has called)
+#   hold          freeze this frame while the chapter is introduced
+#   skip_chip     spans starting here jump over waiting time: show a small "time skipped" chip
+_edit = next((p for p in (OUT / "edit.json", Path(__file__).with_name("edit.json")) if p.exists()), None)
+EDIT = json.loads(_edit.read_text()) if _edit else {"keep": [[0, dur]]}
+keep = [(float(a), min(float(b), dur)) for a, b in EDIT["keep"]]
+emergency_at = EDIT.get("emergency_at")
+hold = EDIT.get("hold")
+skip_chip = set(EDIT.get("skip_chip", []))
+
+chip = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+cd_ = ImageDraw.Draw(chip)
+ct = "기다리는 시간은 줄였어요"
+cf = font(26, 700)
+cw = int(text_w(cd_, ct, cf) + 100)
+cx0, cy0 = CAR[0] + (CAR[2] - cw) // 2, CAR[1] + 22
+cd_.rounded_rectangle((cx0, cy0, cx0 + cw, cy0 + 52), 26, fill=(0, 0, 0, 180))
+for dx in (0, 14):   # fast-forward mark, drawn (the font has no ⏩ glyph)
+    cd_.polygon([(cx0 + 24 + dx, cy0 + 16), (cx0 + 38 + dx, cy0 + 26), (cx0 + 24 + dx, cy0 + 36)], fill=(255, 255, 255))
+cd_.text((cx0 + 66, cy0 + 9), ct, font=cf, fill=(255, 255, 255))
+chip.save(OUT / "skip_chip.png")
 
 # Narration (natural Korean male voice). Free Microsoft Edge neural voice via the `edge-tts` package;
-# set EDGE_TTS to its executable. Lines are placed at the start of each part/chapter, before the car speaks.
-# Calm documentary tone, 합니다체. Numbers are written as they should be read ("일일구", not "119").
+# set EDGE_TTS to its executable. Calm documentary tone, 합니다체. Numbers are written as they should be
+# read ("일일구", not "119").
 VOICE = os.environ.get("NARRATOR_VOICE", "ko-KR-InJoonNeural")
 VOICE_ARGS = os.environ.get("NARRATOR_ARGS", "--rate=-8% --pitch=-4Hz").split()  # picked by the team: sample A
 NARRATION_OPENING = "운전 중 몸에 이상이 오면, 스스로 도움을 청하기 어렵습니다. 쓰러지기 전에 세우게 하고, 대답이 없으면 대신 알립니다."
 NARRATION_INTRO = "케어드라이브는 차의 운전 상태를 기본으로, 워치가 있으면 몸 상태까지 함께 봅니다."
-NARRATION_EMERGENCY = "위급한 순간, 차가 보낸 신호는 가족에게 먼저 닿습니다."
+NARRATION_EMERGENCY = ["위급한 순간, 차가 보낸 신호는 가족에게 먼저 닿습니다.",
+                       "보호자는 위치를 받고, 바로 일일구에 알릴 수 있습니다."]
 NARRATION_CHAPTERS = [
     "출발 전, 지난밤 수면으로 오늘의 휴식 간격을 정합니다.",
     "주행 중에는 차의 기어와 속도를 함께 읽습니다.",
@@ -412,7 +428,7 @@ NARRATION_CHAPTERS = [
     "핸들 움직임과 수면 정보를 합쳐 졸음을 알아챕니다.",
     "기어를 넣은 채 오래 멈춰 있으면, 먼저 말을 겁니다.",
     "심장 박동이 이상하면, 먼저 차를 세우도록 안내합니다.",
-    "대답이 없으면 보호자에게 전화하고, 일일구 연결을 준비합니다.",
+    "맥박이 잡히지 않으면 바로 묻고, 대답이 없으면 보호자에게 전화합니다.",
 ]
 NARRATION_OUTRO = "케어드라이브. 몸과 차를 함께 봅니다."
 
@@ -421,59 +437,124 @@ def narrate(text, path):
     exe = os.environ.get("EDGE_TTS")
     if not exe:
         return None
-    subprocess.run([exe, "--voice", VOICE, *VOICE_ARGS, "--text", text, "--write-media", str(path)],
-                   check=True, capture_output=True)
-    return path
+    tag = path.with_suffix(".txt")
+    if not (path.exists() and tag.exists() and tag.read_text() == text):
+        subprocess.run([exe, "--voice", VOICE, *VOICE_ARGS, "--text", text, "--write-media", str(path)],
+                       check=True, capture_output=True)
+        tag.write_text(text)
+    # edge-tts pads ~0.4 s before and ~1.3 s after the voice; trim both so lines can be placed tightly.
+    trimmed = path.with_suffix(".wav")
+    if not trimmed.exists() or trimmed.stat().st_mtime < path.stat().st_mtime:
+        edge = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05"
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(path), "-af",
+                        f"{edge},areverse,{edge},areverse,apad=pad_dur=0.15", "-ar", "48000", str(trimmed)],
+                       check=True)
+    return trimmed
 
 
-# Crossfade every part into the next.
+# Parts of the film, in order: (file, length, kind, (a, b) range in the recording for "main" parts).
+parts = []
+if OPENING.exists():
+    op_len = media_len(OPENING)
+    lab = label_png(OUT / "opening_label.png", "운전 중, 이런 순간이 온다면")
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OPENING),
+                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(lab), "-filter_complex",
+                    "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,7.6)'[o];"
+                    "[1:v]format=rgba,fade=t=out:st=6.6:d=0.6:alpha=1[l];"
+                    "[o][l]overlay=0:0:enable='lt(t,7.4)',format=yuv420p[v];"
+                    "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
+                    "-map", "[v]", "-map", "[a]", "-t", f"{op_len:.2f}", *ENC, str(OUT / "opening.mp4")], check=True)
+    parts.append((OUT / "opening.mp4", op_len, "ai", None))
+parts.append((OUT / "intro.mp4", INTRO, "card", None))
+
+ch7_narr = narrate(NARRATION_CHAPTERS[-1], OUT / "narr_ch6.mp3")
+for k, (a, b) in enumerate(keep):
+    if hold and abs(hold - a) < 0.01:
+        secs = (media_len(ch7_narr) + 1.7) if ch7_narr else 3.0
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{a + 0.1:.2f}",
+                        "-i", str(OUT / "main.mp4"), "-frames:v", "1", str(OUT / "hold.png")], check=True)
+        subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-loop", "1", "-t", f"{secs:.2f}",
+                        "-i", str(OUT / "hold.png"), "-f", "lavfi", "-t", f"{secs:.2f}",
+                        "-i", "anullsrc=r=48000:cl=stereo", "-vf", f"fps={FPS},format=yuv420p", *ENC,
+                        "-shortest", str(OUT / "hold.mp4")], check=True)
+        parts.append((OUT / "hold.mp4", secs, "main", (a, a)))
+    seg = OUT / f"seg{k}.mp4"
+    vf = []
+    if any(abs(a - s) < 0.01 for s in skip_chip):
+        vf = ["-i", str(OUT / "skip_chip.png"), "-filter_complex",
+              "[1:v]format=rgba,fade=t=in:st=0.3:d=0.3:alpha=1,fade=t=out:st=2.4:d=0.4:alpha=1[ch];"
+              "[0:v][ch]overlay=0:0:enable='lt(t,2.8)',format=yuv420p[v]", "-map", "[v]", "-map", "0:a"]
+    inp = ["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", str(OUT / "main.mp4")]
+    if vf:
+        inp += ["-loop", "1", "-t", f"{b - a:.3f}"]
+    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *inp, *vf, "-t", f"{b - a:.3f}",
+                    *ENC, str(seg)], check=True)
+    parts.append((seg, media_len(seg), "main", (a, b)))
+    if EMERGENCY.exists() and emergency_at is not None and abs(b - float(emergency_at)) < 0.01:
+        em_len = media_len(EMERGENCY) - EM_HEAD
+        parts.append((ai_clip(EMERGENCY, OUT / "emergency_tail.mp4", EM_HEAD, em_len,
+                              delogo_until=9.6 - EM_HEAD), em_len, "ai", None))
+if GUARDIAN.exists():
+    g_len = media_len(GUARDIAN)
+    parts.append((ai_clip(GUARDIAN, OUT / "guardian.mp4", 0.0, g_len, "보호자 휴대폰: 전화와 위치 문자"),
+                  g_len, "ai", None))
+parts.append((OUT / "outro.mp4", OUTRO, "card", None))
+
+# Short dissolves between cuts inside the recording, longer ones into and out of the staged scenes.
+xf = [0.3 if parts[i - 1][2] == "main" and parts[i][2] == "main" else XF for i in range(1, len(parts))]
+starts, acc = [], 0.0
+for i, (_, l, _, _) in enumerate(parts):
+    starts.append(acc)
+    acc += l - (xf[i] if i < len(xf) else 0)
+total = acc
+
 ins, fv, fa, off = [], [], [], 0.0
-for i, (p, _) in enumerate(parts):
+for p, *_ in parts:
     ins += ["-i", str(p)]
 lv, la = "0:v", "0:a"
 for i in range(1, len(parts)):
-    off += parts[i - 1][1] - XF
-    fv.append(f"[{lv}][{i}:v]xfade=transition=fade:duration={XF}:offset={off:.2f}[x{i}]")
-    fa.append(f"[{la}][{i}:a]acrossfade=d={XF}[y{i}]")
+    off += parts[i - 1][1] - xf[i - 1]
+    fv.append(f"[{lv}][{i}:v]xfade=transition=fade:duration={xf[i - 1]}:offset={off:.3f}[x{i}]")
+    fa.append(f"[{la}][{i}:a]acrossfade=d={xf[i - 1]}[y{i}]")
     lv, la = f"x{i}", f"y{i}"
 subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins,
-                "-filter_complex", ";".join(fv + fa), "-map", f"[{lv}]", "-map", f"[{la}]",
-                "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
-                str(OUT / "caredrive-demo.mp4")], check=True)
-total = sum(l for _, l in parts) - XF * (len(parts) - 1)
+                "-filter_complex", ";".join(fv + fa), "-map", f"[{lv}]", "-map", f"[{la}]", *ENC,
+                str(OUT / "caredrive-demo-nonarr.mp4")], check=True)
 
-# Absolute start of each part in the final film, then lay the narration over it.
-starts, acc = [], 0.0
-for _, l in parts:
-    starts.append(acc)
-    acc += l - XF
-names = [p.stem for p, _ in parts]
+names = [p.stem for p, *_ in parts]
+
+
+def film_time(t_main):
+    """Position in the final film of time t_main inside the recording (a cut-out moment maps to the next part)."""
+    for i, (_, _, kind, rng) in enumerate(parts):
+        if kind == "main" and rng[0] <= t_main < rng[1]:
+            return starts[i] + (t_main - rng[0])
+    for i, (_, _, kind, rng) in enumerate(parts):
+        if kind == "main" and rng[0] >= t_main:
+            return starts[i]
+    return total
+
+
 cues = []
 if "opening" in names:
-    cues.append((starts[names.index("opening")] + 0.8, NARRATION_OPENING))
-cues.append((starts[names.index("intro")] + 0.6, NARRATION_INTRO))
-def film_time(t_main):
-    """Position in the final film of time t_main inside the recorded demo."""
-    if split is None:
-        return starts[names.index("main")] + t_main
-    if t_main < split:
-        return starts[names.index("main_a")] + t_main
-    return starts[names.index("main_b")] + (t_main - split)
-
-
-if split is not None:
-    cues.append((starts[names.index("emergency")] + 3.4, NARRATION_EMERGENCY))
+    cues.append((starts[names.index("opening")] + 0.5, NARRATION_OPENING))
+cues.append((starts[names.index("intro")] + 0.4, NARRATION_INTRO))
+if "emergency_tail" in names:
+    s_ = starts[names.index("emergency_tail")]
+    cues += [(s_ + 0.5, NARRATION_EMERGENCY[0]), (s_ + 5.2, NARRATION_EMERGENCY[1])]
 for i, c in enumerate(tl["chapters"][: len(NARRATION_CHAPTERS)]):
-    cues.append((film_time(max(0.0, (c["t"] - t0) / 1000)) + 0.2 + (0.5 if split is not None and i == CARDIAC_I else 0),
-                 NARRATION_CHAPTERS[i]))
+    cues.append((film_time(max(0.0, (c["t"] - t0) / 1000)) + 0.3, NARRATION_CHAPTERS[i]))
 cues.append((starts[names.index("outro")] + 0.5, NARRATION_OUTRO))
-files = [(narrate(text, OUT / f"narr{i}.mp3"), at) for i, (at, text) in enumerate(cues)]
-files = [(f, at) for f, at in files if f]
+files = []
+for i, (at, text) in enumerate(cues):
+    f = ch7_narr if text == NARRATION_CHAPTERS[-1] else narrate(text, OUT / f"narr{i}.mp3")
+    if f:
+        files.append((f, at))
 
 # Never talk over the car: car speech windows in film time (chimes + voice, ~6 Korean syllables/s).
 busy = sorted((film_time(max(0.0, (sp["t"] - t0) / 1000)) - 0.6,
-               film_time(max(0.0, (sp["t"] - t0) / 1000)) + len(sp["text"]) / 6.0 + 1.0) for sp in speaks)
+               film_time(max(0.0, (sp["t"] - t0) / 1000)) + len(sp["text"]) / 6.0 + 1.0) for sp in speaks
+              if any(a <= (sp["t"] - t0) / 1000 < b for a, b in keep))
 placed, kept = [], []
 for f, at in sorted(files, key=lambda x: x[1]):
     d = media_len(f)
@@ -488,22 +569,67 @@ for f, at in sorted(files, key=lambda x: x[1]):
         continue
     placed.append((start, start + d))
     kept.append((f, start))
-files = kept
-if files:
-    final = OUT / "caredrive-demo.mp4"
-    tmp = OUT / "caredrive-demo-nonarr.mp4"
-    final.replace(tmp)
-    ins = ["-i", str(tmp)]
-    flt, labels = [], ["[0:a]volume=0.85[base]"]
-    for k, (f, at) in enumerate(files):
-        ins += ["-i", str(f)]
-        ms = int(at * 1000)
-        flt.append(f"[{k + 1}:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.6,adelay={ms}|{ms}[n{k}]")
-    mix = "[base]" + "".join(f"[n{k}]" for k in range(len(files)))
-    graph = ";".join(labels + flt + [f"{mix}amix=inputs={len(files) + 1}:duration=first:normalize=0[a]"])
-    subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins, "-filter_complex", graph,
-                    "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-                    "-movflags", "+faststart", str(final)], check=True)
-    (OUT / "narration.json").write_text(json.dumps([{"at": round(at, 2), "text": t} for at, t in cues],
-                                                   ensure_ascii=False, indent=1))
-print(OUT / "caredrive-demo.mp4", f"{total:.1f}s", f"{len(caps)} captions", f"lead v={lead_v:.2f} a={lead_a:.2f}")
+
+# Quiet piano bed under the whole film after the opening, ducked under every voice, silent while the
+# playlist scene plays its own music.
+quiet = []
+if music:
+    m_a = film_time(music[0][1]) - 1.0
+    m_b = film_time(music[-1][1]) + 10.0 + 1.0
+    quiet.append((m_a, m_b))
+bed_from = 0.0   # music under the whole film; the 156 s piece is looped with a crossfade
+final = OUT / "caredrive-demo.mp4"
+ins = ["-i", str(OUT / "caredrive-demo-nonarr.mp4")]
+flt = ["[0:a]volume=0.85[base]"]
+for k, (f, at) in enumerate(kept):
+    ins += ["-i", str(f)]
+    ms = int(at * 1000)
+    flt.append(f"[{k + 1}:a]aresample=48000,aformat=channel_layouts=stereo,volume=1.6,adelay={ms}|{ms}[n{k}]")
+voice = "[base]" + "".join(f"[n{k}]" for k in range(len(kept)))
+flt.append(f"{voice}amix=inputs={len(kept) + 1}:duration=first:normalize=0,asplit[vmix][key]")
+if BED.exists():
+    # Ducking is precomputed: every voice window is known (placed narration, car speech), so build a gain
+    # envelope and multiply. (sidechaincompress stalled to silence on this material.)
+    import wave
+    import numpy as np
+    RATE = 1000
+    tt = np.arange(int(total * RATE)) / RATE
+
+    def dip(a, b, level, ramp):
+        return 1 - (1 - level) * np.clip((tt - (a - ramp)) / ramp, 0, 1) * np.clip(((b + ramp) - tt) / ramp, 0, 1)
+
+    env = np.clip((tt - bed_from) / 1.5, 0, 1) * np.clip((total - 0.2 - tt) / 3.5, 0, 1)
+    for qa, qb in quiet:
+        env *= dip(qa, qb, 0.0, 1.2)
+    for va, vb in busy + placed:
+        env = np.minimum(env, dip(va + 0.3, vb - 0.3, 0.36, 0.4))
+    with wave.open(str(OUT / "bed_env.wav"), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes((env * 32767).astype(np.int16).tobytes())
+    ins += ["-i", str(BED), "-i", str(BED), "-i", str(OUT / "bed_env.wav")]
+    ms = int(bed_from * 1000)
+    flt.append("[key]anullsink")
+    # The recording swings from -13 to -37 LUFS short-term, so even it out first (otherwise the quiet
+    # passages vanish under the ducking), then set a steady level a little under the voices.
+    b1, b2 = len(kept) + 1, len(kept) + 2
+    flt.append(f"[{b1}:a]aresample=48000[bA];[{b2}:a]aresample=48000[bB];"
+               f"[bA][bB]acrossfade=d=4:c1=tri:c2=tri,aformat=channel_layouts=stereo,"
+               f"dynaudnorm=f=400:g=41:m=12:p=0.7,loudnorm=I=-19:TP=-3:LRA=5,"
+               f"aresample=48000,adelay={ms}|{ms},apad,atrim=0:{total:.2f}[bedr]")
+    flt.append(f"[{len(kept) + 3}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[env]")
+    flt.append("[bedr]aformat=sample_fmts=fltp[bedf];[bedf][env]amultiply[bed]")
+    flt.append("[vmix][bed]amix=inputs=2:duration=first:normalize=0[a]")
+else:
+    flt.append("[key]anullsink")
+    flt.append("[vmix]anull[a]")
+(OUT / "filter_final.txt").write_text(";\n".join(flt))
+subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *ins, "-filter_complex", ";".join(flt),
+                "-map", "0:v", "-map", "[a]", "-t", f"{total:.2f}", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart", str(final)], check=True)
+(OUT / "narration.json").write_text(json.dumps([{"at": round(at, 2), "text": f.name} for f, at in kept],
+                                               ensure_ascii=False, indent=1))
+(OUT / "parts.json").write_text(json.dumps([{"part": p.name, "start": round(s, 2), "len": round(l, 2)}
+                                            for (p, l, _, _), s in zip(parts, starts)], indent=1))
+print(final, f"{total:.1f}s", f"{len(caps)} captions", f"lead v={lead_v:.2f} a={lead_a:.2f}")

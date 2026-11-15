@@ -2,12 +2,14 @@
 
 갤럭시 워치가 아는 **몸 상태**(수면·심박·부정맥 알림·맥박)와 차가 아는 **운전 상태**(기어·속도·핸들·브레이크)를 합쳐, 출발 전 휴식 간격을 정하고 운전 중 이상이 보이면 차가 먼저 묻고 돕는 Pleos 앱. 현대자동차그룹 차량용 앱 개발 공모전(Pleos) 출품작.
 
+> 현재 워치·폰 연동은 웹 폰 시뮬레이터(`phone-sim/`)로 대신합니다. 시연의 건강 데이터는 시뮬레이터로 넣은 시험 값이며, 실제 워치·폰 앱은 2차 발표 전까지 구현할 예정입니다.
+
 **주요 흐름**
 - **심장 이상:** "심장 박동이 평소와 달라요. 괜찮으세요?"라고 묻는다. 도움 요청이나 30초 무응답이면 비상등과 정차를 안내하고, 실내 조명을 빨갛게 바꾸고, 가까운 쉼터를 경유지로 넣는다. 정차하면 보호자에게 전화하고 119 연결을 준비한다.
-- **맥박 없음:** 바로 묻는다. 1분이 지나면 보호자에게 미리 알리고, 3분 동안 대답이 없으면 보호자에게 자동으로 전화하고 위치 문자를 보낸다. 119는 다이얼러에 번호를 채워 띄운다(일반 앱은 긴급번호로 자동 발신할 수 없다).
+- **맥박 없음:** 바로 묻는다. 핸들·브레이크 입력이 없으면 30초(입력이 있었으면 1분)에 보호자에게 미리 알리고, 3분 동안 대답이 없으면 보호자에게 자동으로 전화하고 위치 문자를 보낸다. 119는 다이얼러에 번호를 채워 띄운다(일반 앱은 긴급번호로 자동 발신할 수 없다).
 - **긴장:** "힘든 일이 있었나요?"라고 묻고, "좀 그래요"라고 답하면 폰이 미리 정한 플레이리스트를 연다.
 - **졸음:** 수면, 운전 시간, 시간대, 워치 심박·심박변이도, **핸들 각도 패턴**을 합친 점수로 판단해 휴식이나 졸음쉼터를 안내한다.
-- **시연 영상:** `docs/demo/caredrive-demo.mp4`(2분 32초, 소리 포함). 맨 앞 11초는 AI로 만든 연출 장면이고 화면에 그렇게 표기했다. GitHub Release에도 올라가 있다.
+- **시연 영상:** [GitHub Release v1.0.0](https://github.com/Yususiwww/caredrive/releases/tag/v1.0.0)의 `caredrive-demo.mp4`(2분 54초, 1080p, 소리 포함)와 `caredrive-demo-720p.mp4`. 에뮬레이터 화면과 소리를 그대로 녹화했고, 중간중간 들어간 AI 연출 장면에는 모두 "연출 장면 · AI 생성"이라고 표기했다.
 
 > 케어드라이브는 진단하지 않습니다. 삼성 헬스 모니터가 보낸 알림과 일반 심박 정보를 바탕으로 "쉬어 가세요"를 안내합니다.
 
@@ -43,10 +45,13 @@ cd relay && npm install && npm start      # 맥에서 http://localhost:8787/ 열
 
 | 폴더 | 내용 | 상태 |
 |---|---|---|
-| `car-app/` | Pleos 차량 앱 (AAOS · Kotlin · Compose) | 4단계: 중계 연결·심박 추이 차트 |
+| `car-app/` | Pleos 차량 앱 (AAOS · Kotlin · Compose) | 동작 (`./gradlew :app:testDebugUnitTest`, 단위 테스트 85개) |
 | `relay/` | 폰 ↔ 차 중계 서버 (Node.js · WebSocket) | 동작 (`npm test`) |
 | `phone-sim/` | 폰 시뮬레이터 웹페이지 (컨디션·심박·혈당·부정맥 알림·맥박 없음·졸음 신호 입력, 이상 기록, 연락·음악 표시) | 동작 |
 | `docs/decisions/` | 결정 기록 | |
+| `docs/demo/` | 시연 영상 제작 계획·AI 연출 장면 규칙과 점검 이미지 (영상 파일은 Release에 있음) | |
+| `docs/design/` | 화면 시안 (계기판형, 넓은 창·좁은 창) | |
+| `docs/research/` | 조사 자료 | |
 
 ## 판정 로직 (`car-app/.../engine/`)
 
@@ -185,3 +190,13 @@ curl         'http://127.0.0.1:8088/vehicle/state'                   # 현재 �
 
 - Pleos Connect SDK: `ai.pleos.playground:Vehicle:2.3.2`, `NaviHelper:3.0.5`, `TextToSpeech:3.3.1`
 - 예정: Samsung Health Data SDK 1.1.0 (폰), Samsung Health Sensor SDK (워치, 필요 시)
+
+## 출처와 라이선스
+
+- 음악 (시연 영상)
+  - Erik Satie, Gymnopédie No.1 · No.3: 퍼블릭 도메인 녹음(CC0), Wikimedia Commons
+  - "Canon in D Major" Kevin MacLeod (incompetech.com), Licensed under Creative Commons: By Attribution 3.0 (http://creativecommons.org/licenses/by/3.0/)
+- AI 연출 장면 (시연 영상): Google Gemini(Veo)로 생성. 실존 인물·브랜드 로고 없음. 영상 안에 "연출 장면 · AI 생성"으로 표기
+- 내레이션: Microsoft Edge 음성 합성(ko-KR)
+- 글꼴: Asta Sans, SIL Open Font License 1.1 ([사본](car-app/third_party/AstaSans-OFL.txt))
+- 휴게소·졸음쉼터 위치: © OpenStreetMap contributors, ODbL

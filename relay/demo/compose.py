@@ -42,7 +42,7 @@ CHAPTERS = [
      "차량 핸들 신호: 10초 넘게 조향 없음 → 큰 수정 조향  +  짧은 수면 = 졸음 점수 45 → '쉬어 갈게요'"),
     ("정체 · 멈춰 있으면 먼저 물어요",
      "차량 신호: 기어 D · 속도 0 · 핸들·브레이크 입력 없음 2분 (시연: 2분을 20배 빠르게)  ·  '괜찮아' → 다시 출발"),
-    ("심장 이상 · 비상등 · 정차 · 연락",
+    ("심장 이상 · 비상등 안내 · 정차 · 연락",
      "넣은 값: 부정맥 알림 (시뮬레이션)  ·  '도움이 필요해요' → 실내 조명 빨강 · 정차(P)하면 보호자 전화 · 119 연결 준비"),
     ("맥박 없음 · 3분 안에 대답이 없으면",
      "시연을 위해 3분 타이머를 10배 빠르게 돌렸어요  ·  30초(핸들·브레이크 입력 없음): 보호자 미리 알림  ·  3분: 보호자 전화 · 119 다이얼러 준비"),
@@ -204,7 +204,7 @@ for i, e in enumerate(tl.get("events", [])):
 MUSIC_DIR = ROOT / "docs/demo/music"
 RECORDINGS = [(MUSIC_DIR / "gymnopedie_cc0.ogg", 13.0, "♪ 내 플레이리스트 1 · 사티 - 짐노페디 1번"),
               (MUSIC_DIR / "canon_macleod_ccby.ogg", 0.0, "♪ 내 플레이리스트 2 · 파헬벨 - 캐논")]
-MUSIC_CREDIT = "음악: Satie - Gymnopedie No.1 (CC0, Wikimedia Commons) · Pachelbel - Canon in D, Kevin MacLeod (incompetech.com), CC BY 3.0"
+MUSIC_CREDIT = "음악: Satie - Gymnopedie No.1 (CC0, Wikimedia Commons) · “Canon in D Major” Kevin MacLeod (incompetech.com), CC BY 3.0 (creativecommons.org/licenses/by/3.0)"
 music = []
 play = next((s_ for s_ in tl["speaks"] if "노래" in s_["text"]), None)
 if play:
@@ -282,12 +282,13 @@ EM_HEAD = 3.0  # length of that first shot in emergency.mp4 (scene cut at 3.0 s)
 GUARDIAN = INSERTS_DIR / "guardian_sms.mp4"
 
 
-def label_png(path, lower=None):
+def label_png(path, lower=None, tag=True):
     """Transparent 1920x1080 overlay: 'staged · AI' tag at the top left, optional lower-third line."""
     lab = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(lab)
-    ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
-    ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
+    if tag:
+        ld.rounded_rectangle((48, 40, 48 + 300, 40 + 48), 24, fill=(0, 0, 0, 150))
+        ld.text((70, 49), "연출 장면 · AI 생성", font=font(24, 600), fill=(242, 244, 246))
     if lower:
         f = font(50, 800)
         tw = text_w(ld, lower, f)
@@ -330,7 +331,7 @@ def card(path, draw_fn):
 
 def intro(d, img):
     d.text((160, 120), "Twelveone", font=font(30, 700), fill=BLUE)
-    d.text((160, 250), "쓰러지기 전에 세우고, 대답이 없으면 알린다.", font=font(46, 600), fill=SUB)
+    d.text((160, 250), "쓰러지기 전에 세우게 하고, 대답이 없으면 알린다.", font=font(46, 600), fill=SUB)
     d.text((152, 330), "케어드라이브", font=font(150, 800), fill=INK)
     d.text((160, 530), "차의 운전 신호에, 워치의 몸 신호를 더해요", font=font(54, 700), fill=SUB)
     d.text((160, 860), "Pleos Connect 에뮬레이터 2.1.0의 화면과 소리를 그대로 녹화했어요", font=font(28, 500), fill=MUTE)
@@ -340,7 +341,7 @@ def intro(d, img):
 BED = ROOT / "docs/demo/music/gymnopedie3_cc0.ogg"   # quiet bed under the whole film (CC0, Wikimedia Commons)
 if music:
     MUSIC_CREDIT = ("음악: Satie - Gymnopedie No.1, No.3 (CC0, Wikimedia Commons) · "
-                    "Pachelbel - Canon in D, Kevin MacLeod (incompetech.com), CC BY 3.0")
+                    "“Canon in D Major” Kevin MacLeod (incompetech.com), CC BY 3.0 (creativecommons.org/licenses/by/3.0)")
 
 
 def outro(d, img):
@@ -456,12 +457,15 @@ def narrate(text, path):
 parts = []
 if OPENING.exists():
     op_len = media_len(OPENING)
-    lab = label_png(OUT / "opening_label.png", "운전 중, 이런 순간이 온다면")
+    # The "AI" tag stays for the whole opening; only the lower-third line fades out.
+    tag = label_png(OUT / "opening_tag.png")
+    lab = label_png(OUT / "opening_label.png", "운전 중, 이런 순간이 온다면", tag=False)
     subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(OPENING),
-                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(lab), "-filter_complex",
+                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(lab),
+                    "-loop", "1", "-t", f"{op_len:.2f}", "-i", str(tag), "-filter_complex",
                     "[0:v]scale=1920:1080,fps=30,delogo=x=1690:y=850:w=110:h=110:enable='lt(t,7.6)'[o];"
                     "[1:v]format=rgba,fade=t=out:st=6.6:d=0.6:alpha=1[l];"
-                    "[o][l]overlay=0:0:enable='lt(t,7.4)',format=yuv420p[v];"
+                    "[o][l]overlay=0:0:enable='lt(t,7.4)'[o2];[o2][2:v]overlay=0:0,format=yuv420p[v];"
                     "[0:a]aresample=48000,aformat=channel_layouts=stereo[a]",
                     "-map", "[v]", "-map", "[a]", "-t", f"{op_len:.2f}", *ENC, str(OUT / "opening.mp4")], check=True)
     parts.append((OUT / "opening.mp4", op_len, "ai", None))
@@ -493,7 +497,8 @@ for k, (a, b) in enumerate(keep):
     if EMERGENCY.exists() and emergency_at is not None and abs(b - float(emergency_at)) < 0.01:
         em_len = media_len(EMERGENCY) - EM_HEAD
         parts.append((ai_clip(EMERGENCY, OUT / "emergency_tail.mp4", EM_HEAD, em_len,
-                              delogo_until=9.6 - EM_HEAD), em_len, "ai", None))
+                              lower="보호자가 위치를 받고 119에 신고", delogo_until=9.6 - EM_HEAD),
+                      em_len, "ai", None))
 if GUARDIAN.exists():
     g_len = media_len(GUARDIAN)
     parts.append((ai_clip(GUARDIAN, OUT / "guardian.mp4", 0.0, g_len, "보호자 휴대폰: 전화와 위치 문자"),
